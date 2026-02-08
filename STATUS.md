@@ -17,6 +17,7 @@
 - **Transparent colors**: JSON null handled properly (C writes null, JS checks `!= null`)
 - **Clip regions**: save/restore stack correct with base y-flip-free transform
 - **Raster positioning**: Correct handling of negative width/height from R's raster callback, synchronous image decode to preserve clip/transform state
+- **Text metrics from webview**: Synchronous round-trip to measure text in the webview's Canvas2D context for accurate label positioning. Cached (512-entry hash map) to avoid repeated round-trips. Falls back to approximation when not connected.
 - **R 4.1+ compatibility**: No-op stubs for setPattern, setMask, setClipPath, defineGroup, etc.
 
 ## Rename: vscgd → jgd
@@ -32,8 +33,7 @@
 
 ### Medium Priority
 3. **Export**: PNG/SVG/PDF export UI exists in toolbar but handlers aren't fully wired.
-4. **Text metrics from webview**: Currently using approximation-based `strWidth`/`metricInfo`. Should measure in the webview via round-trip for accurate layout (especially for ggplot2 label positioning).
-5. **Discovery file reliability**: The C-side discovery (`transport.c`) checks TMPDIR → TMP → /tmp. Works when env var is set, but discovery file alone may not work if TMPDIR differs between extension and R.
+4. **Discovery file reliability**: The C-side discovery (`transport.c`) checks TMPDIR → TMP → /tmp. Works when env var is set, but discovery file alone may not work if TMPDIR differs between extension and R.
 
 ### Low Priority
 6. **Packaging for distribution**: VSIX for extension marketplace, CRAN-ready R package structure.

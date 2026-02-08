@@ -179,8 +179,129 @@ static void cb_text(double x, double y, const char *str,
     st->page.op_count++;
 }
 
+/* Helper: write gc font info for metrics request */
+static void metrics_gc_json(json_writer_t *w, const pGEcontext gc) {
+    jw_key(w, "gc");
+    jw_obj_start(w);
+    jw_key(w, "font");
+    jw_obj_start(w);
+    jw_kv_str(w, "family", gc->fontfamily[0] ? gc->fontfamily : "");
+    jw_kv_int(w, "face", gc->fontface);
+    jw_kv_dbl(w, "size", gc->cex * gc->ps);
+    jw_obj_end(w);
+    jw_obj_end(w);
+}
+
+/* Parse a double value after "key": in a JSON string */
+static double parse_json_dbl(const char *json, const char *key) {
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *p = strstr(json, needle);
+    if (!p) return 0.0;
+    p = strchr(p, ':');
+    if (!p) return 0.0;
+    return strtod(p + 1, NULL);
+}
+
+static int metrics_id_counter = 0;
+
+/* --- Simple metrics cache --- */
+#define MCACHE_SIZE 512
+
+typedef struct {
+    unsigned int hash;
+    double v1, v2, v3;  /* width (strWidth) or ascent/descent/width (metricInfo) */
+    int occupied;
+} mcache_entry_t;
+
+static mcache_entry_t mcache[MCACHE_SIZE];
+
+static unsigned int mcache_hash(const char *str, int len, const pGEcontext gc) {
+    unsigned int h = 5381;
+    for (int i = 0; i < len; i++)
+        h = ((h << 5) + h) ^ (unsigned char)str[i];
+    h = ((h << 5) + h) ^ gc->fontface;
+    /* hash the font size bits */
+    double sz = gc->cex * gc->ps;
+    unsigned int sz_bits;
+    memcpy(&sz_bits, &sz, sizeof(sz_bits));
+    h = ((h << 5) + h) ^ sz_bits;
+    const char *fam = gc->fontfamily;
+    while (*fam) h = ((h << 5) + h) ^ (unsigned char)*fam++;
+    return h;
+}
+
+static mcache_entry_t *mcache_lookup(unsigned int hash) {
+    mcache_entry_t *e = &mcache[hash % MCACHE_SIZE];
+    if (e->occupied && e->hash == hash) return e;
+    return NULL;
+}
+
+static void mcache_store(unsigned int hash, double v1, double v2, double v3) {
+    mcache_entry_t *e = &mcache[hash % MCACHE_SIZE];
+    e->hash = hash;
+    e->v1 = v1;
+    e->v2 = v2;
+    e->v3 = v3;
+    e->occupied = 1;
+}
+
+/* Read a metrics response, stashing any resize messages that arrive first */
+static int recv_metrics_response(jgd_state_t *st, char *buf, size_t bufsize) {
+    for (int attempts = 0; attempts < 5; attempts++) {
+        int n = transport_recv_line(&st->transport, buf, bufsize, 500);
+        if (n <= 0) return -1;
+        if (strstr(buf, "\"metrics_response\"")) return n;
+        /* Got a non-metrics message (e.g. resize) — stash and retry */
+        if (strstr(buf, "\"resize\"")) {
+            char *wp = strstr(buf, "\"width\"");
+            char *hp = strstr(buf, "\"height\"");
+            if (wp && hp) {
+                double w = 0, h = 0;
+                wp = strchr(wp, ':'); if (wp) w = strtod(wp + 1, NULL);
+                hp = strchr(hp, ':'); if (hp) h = strtod(hp + 1, NULL);
+                if (w > 0 && h > 0) {
+                    st->pending_w = w;
+                    st->pending_h = h;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 static double cb_strWidth(const char *str, const pGEcontext gc, pDevDesc dd) {
     jgd_state_t *st = get_state(dd);
+    if (!st->transport.connected)
+        return metrics_str_width(str, gc, st->dpi);
+
+    unsigned int h = mcache_hash(str, (int)strlen(str), gc);
+    mcache_entry_t *cached = mcache_lookup(h);
+    if (cached) return cached->v1;
+
+    json_writer_t w;
+    jw_init(&w);
+    jw_obj_start(&w);
+    jw_kv_str(&w, "type", "metrics_request");
+    jw_kv_int(&w, "id", ++metrics_id_counter);
+    jw_kv_str(&w, "kind", "strWidth");
+    jw_kv_str(&w, "str", str);
+    metrics_gc_json(&w, gc);
+    jw_obj_end(&w);
+
+    transport_send(&st->transport, jw_result(&w), jw_length(&w));
+    jw_free(&w);
+
+    char buf[1024];
+    int n = recv_metrics_response(st, buf, sizeof(buf));
+    if (n <= 0)
+        return metrics_str_width(str, gc, st->dpi);
+
+    double width = parse_json_dbl(buf, "width");
+    if (width > 0) {
+        mcache_store(h, width, 0, 0);
+        return width;
+    }
     return metrics_str_width(str, gc, st->dpi);
 }
 
@@ -188,7 +309,54 @@ static void cb_metricInfo(int c, const pGEcontext gc,
                           double *ascent, double *descent, double *width,
                           pDevDesc dd) {
     jgd_state_t *st = get_state(dd);
-    metrics_char_info(c, gc, st->dpi, ascent, descent, width);
+    if (!st->transport.connected) {
+        metrics_char_info(c, gc, st->dpi, ascent, descent, width);
+        return;
+    }
+
+    int cc = c < 0 ? -c : c;
+    char key[8];
+    snprintf(key, sizeof(key), "c%d", cc);
+    unsigned int h = mcache_hash(key, (int)strlen(key), gc);
+    mcache_entry_t *cached = mcache_lookup(h);
+    if (cached) {
+        *ascent = cached->v1;
+        *descent = cached->v2;
+        *width = cached->v3;
+        return;
+    }
+
+    json_writer_t w;
+    jw_init(&w);
+    jw_obj_start(&w);
+    jw_kv_str(&w, "type", "metrics_request");
+    jw_kv_int(&w, "id", ++metrics_id_counter);
+    jw_kv_str(&w, "kind", "metricInfo");
+    jw_kv_int(&w, "c", cc);
+    metrics_gc_json(&w, gc);
+    jw_obj_end(&w);
+
+    transport_send(&st->transport, jw_result(&w), jw_length(&w));
+    jw_free(&w);
+
+    char buf[1024];
+    int n = recv_metrics_response(st, buf, sizeof(buf));
+    if (n <= 0) {
+        metrics_char_info(c, gc, st->dpi, ascent, descent, width);
+        return;
+    }
+
+    double a = parse_json_dbl(buf, "ascent");
+    double d = parse_json_dbl(buf, "descent");
+    double ww = parse_json_dbl(buf, "width");
+    if (a > 0 || d > 0 || ww > 0) {
+        *ascent = a;
+        *descent = d;
+        *width = ww;
+        mcache_store(h, a, d, ww);
+    } else {
+        metrics_char_info(c, gc, st->dpi, ascent, descent, width);
+    }
 }
 
 static void check_incoming(jgd_state_t *st, pDevDesc dd) {
