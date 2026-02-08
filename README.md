@@ -78,15 +78,21 @@ using the browser's Canvas2D API.
 
 ### R package
 
-```bash
-cd r-pkg
-R CMD build .
-R CMD INSTALL jgd_0.0.1.tar.gz
+```r
+# From GitHub
+remotes::install_github("grantmcdermott/jgd", subdir = "r-pkg")
+
+# Or from source
+# cd r-pkg && R CMD build . && R CMD INSTALL jgd_0.0.1.tar.gz
 ```
 
-### VS Code extension (development)
+### VS Code extension
 
 ```bash
+# Install from .vsix
+code --install-extension jgd-vscode-0.0.1.vsix
+
+# Or for development
 cd vscode-extension
 npm install
 npm run compile
