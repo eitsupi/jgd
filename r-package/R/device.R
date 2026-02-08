@@ -10,13 +10,20 @@
 #' @export
 jgd <- function(width = 8, height = 6, dpi = 96) {
   .Call(C_jgd, as.double(width), as.double(height), as.double(dpi))
-  addTaskCallback(jgd_resize_callback, name = "jgd_resize")
+
+  if (requireNamespace("later", quietly = TRUE)) {
+    poll <- function() {
+      tryCatch(.Call(C_jgd_poll_resize), error = function(e) NULL)
+      later::later(poll, 0.2)
+    }
+    later::later(poll, 0.2)
+  } else {
+    addTaskCallback(jgd_resize_callback, name = "jgd_resize")
+  }
+
   invisible()
 }
 
-# Task callback: runs after each top-level R expression.
-# C_jgd_poll_resize checks for pending resize, applies new dims, and
-# calls GEplayDisplayList() if needed. Returns TRUE if a resize occurred.
 jgd_resize_callback <- function(...) {
   tryCatch(.Call(C_jgd_poll_resize), error = function(e) NULL)
   TRUE
