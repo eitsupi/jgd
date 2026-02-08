@@ -6,10 +6,11 @@
 *.tar.gz
 
 # R package build
-r-package/src/*.o
-r-package/src/*.so
-r-package/src/*.d
-r-package/src/symbols.rds
+r-pkg/src/*.o
+r-pkg/src/*.so
+r-pkg/src/*.d
+r-pkg/src/symbols.rds
+r-pkg/*.Rcheck
 
 # VS Code extension
 vscode-extension/node_modules/

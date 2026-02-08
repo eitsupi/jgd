@@ -1,3 +1,7 @@
+# Registered .Call entries (suppress R CMD check NOTEs)
+#' @useDynLib jgd, .registration = TRUE
+NULL
+
 .onLoad = function(libname, pkgname) {
   op = options()
   defaults = list(jgd.socket = NULL)

@@ -5,13 +5,13 @@ Authors@R: person("Grant", "McDermott", role = c("aut", "cre"),
     email = "contact@grantmcdermott.com")
 Description: A graphics device that records R plotting operations and streams
     them as JSON over a Unix domain socket to an external renderer. The device
-    acts as a pure recorder with no rendering dependencies — all rendering
+    acts as a pure recorder with no rendering dependencies -- all rendering
     occurs in the client (e.g. a VS Code webview or any NDJSON-capable
     frontend).
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.3
 NeedsCompilation: yes
 Suggests: later
 SystemRequirements: POSIX sockets (available on macOS, Linux; Windows support
