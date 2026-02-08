@@ -4,13 +4,13 @@
 
 **jgd** is a lightweight (zero dependency) R graphics device that serializes
 every R plotting operation as JSON and streams it over a Unix domain socket to
-an external renderer. The primary renderer today is a VS Code extension that
-replays the operations onto an HTML Canvas2D surface. In other words, you can 
-use it to get a nice graphics device from VS Code. But the protocol is
-frontend-agnostic; any client that can read newline-delimited JSON can render R
-plots.
+an external renderer. The main applicaton today is a VS Code extension that
+offers nice R graphics display and UX features as per this screenshot:
 
 ![Screenshot of jgd running in VS Code](jgd-ss.png)
+
+But the **jgd** protocol is designed to be frontend-agnostic. In principle, any
+client able to read (newline-delimited) JSON could use it to render R plots.
 
 **Caveats:** The package is experimental and may have some rough edges, despite
 my best efforts at thorough local testing. More importantly, it only supports
@@ -91,7 +91,7 @@ experience; indeed, the official R extension docs even recommend using it.
 However, this alternative has become increasingly tricky to work with due to
 repeated CRAN removals and lack of maintenance bandwidth. In brief, this is
 because it embeds a full C++ SVG rendering stack and HTTP server inside the R
-process, which made them powerful but fragile. At the time of writing, both
+process, which is powerful but fragile. At the time of writing, both
 [httpgd](https://github.com/nx10/httpgd) and its core
 [unigd](https://github.com/nx10/unigd) dependency are unavailable on CRAN due to
 a variety of C++ toolchain issues: non-API entry points, compiler compatibility
