@@ -5,7 +5,7 @@
 **jgd** is a lightweight (zero dependency) R graphics device that serializes
 every R plotting operation as JSON and streams it over a Unix domain socket to
 an external renderer. The main applicaton today is a VS Code extension that
-offers nice R graphics display and UX features as per this screenshot:
+offers nice R graphics display and UX features, as per this screenshot:
 
 ![Screenshot of jgd running in VS Code](jgd-ss.png)
 
@@ -174,6 +174,8 @@ using the browser's Canvas2D API.
 - [ ] **Browser frontend**: Standalone renderer served over HTTP/WebSocket for
   use with Neovim, Emacs, or terminal R
 - [ ] **CRAN submission**: Package the R side for CRAN distribution
+- [ ] **R extension integration**: Incorporate the code from this package into
+  the main VS Code R extension (if the upstream maintainers agree).
 
 ## Limitations
 
