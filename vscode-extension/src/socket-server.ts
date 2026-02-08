@@ -155,6 +155,11 @@ export class SocketServer {
                     });
                     break;
 
+                case 'close':
+                    console.log(`jgd: session ${session.id} device closed`);
+                    this.webviewProvider.onDeviceClosed(session.id);
+                    break;
+
                 default:
                     break;
             }

@@ -56,14 +56,15 @@ static void cb_close(pDevDesc dd) {
         flush_frame(st, 0);
     }
 
+    /* Notify renderer that device is closing */
+    const char *close_msg = "{\"type\":\"close\"}";
+    transport_send(&st->transport, close_msg, strlen(close_msg));
+
     page_free(&st->page);
     jw_free(&st->frame_buf);
     transport_close(&st->transport);
     free(st);
     dd->deviceSpecific = NULL;
-
-    /* Remove the task callback (best-effort, ignore errors) */
-    /* The R-level callback checks device validity and will no-op if gone */
 }
 
 static void cb_clip(double x0, double x1, double y0, double y1, pDevDesc dd) {

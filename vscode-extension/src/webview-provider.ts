@@ -48,6 +48,11 @@ export class PlotWebviewProvider {
         this.updateToolbar();
     }
 
+    onDeviceClosed(_sessionId: string) {
+        // Keep plots in history for navigation/export, just update toolbar
+        this.updateToolbar();
+    }
+
     navigatePrevious() {
         const plot = this.history.navigatePrevious();
         if (plot) {
