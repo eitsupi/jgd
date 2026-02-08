@@ -12,10 +12,11 @@
 - **Auto-discovery**: `JGD_SOCKET` env var injected into VS Code terminals via `environmentVariableCollection`
 - **Discovery file**: Written to `os.tmpdir()`, `/tmp/`, and `/private/tmp/`
 - **Deferred resize**: Panel dimensions stored as pending, applied on next `newPage` so next plot uses current panel size
-- **Live resize**: Task callback (`addTaskCallback`) polls for pending resize and calls `GEplayDisplayList()` when R is idle, re-rendering the current plot at new dimensions with proper layout reflow
+- **Live resize**: Task callback (`addTaskCallback`) polls for pending resize and calls `GEplayDisplayList()` when R is idle, re-rendering the current plot at new dimensions with proper layout reflow. Uses `later` package (soft dependency) for automatic 200ms polling when available; falls back to task callback otherwise.
 - **Text rotation**: Works correctly
 - **Transparent colors**: JSON null handled properly (C writes null, JS checks `!= null`)
 - **Clip regions**: save/restore stack correct with base y-flip-free transform
+- **Raster positioning**: Correct handling of negative width/height from R's raster callback, synchronous image decode to preserve clip/transform state
 - **R 4.1+ compatibility**: No-op stubs for setPattern, setMask, setClipPath, defineGroup, etc.
 
 ## Rename: vscgd → jgd
