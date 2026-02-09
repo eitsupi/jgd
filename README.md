@@ -54,7 +54,7 @@ code --install-extension vscode-ext/jgd-vscode-0.0.1.vsix
 
 ## Usage
 
-Assuming that you already have the [R
+Assuming that you already have the main [R
 extension](https://marketplace.visualstudio.com/items?itemName=REditorSupport.r),
 simply run the following script from VS Code. (If you don't have the extension,
 open up a terminal inside VS Code, start R, and then copy the code across
