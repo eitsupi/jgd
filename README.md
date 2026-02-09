@@ -219,7 +219,7 @@ r-pkg/
     └── init.c             # .Call registration
 
 vscode-ext/
-├── jgd-vscode.vsix
+├── jgd-vscode-0.0.1.vsix
 ├── package.json
 └── src/
     ├── extension.ts       # Activation, commands, env var injection
