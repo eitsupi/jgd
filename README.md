@@ -82,7 +82,7 @@ library(ggplot2)
 ggplot(penguins, aes(bill_len, bill_dep, col = species)) +
   geom_point() +
   facet_wrap(~island) +
-  theme_minimal()
+  theme_bw()
 ```
 
 Use ◀ ▶ in the plot pane (or `Alt+Left` / `Alt+Right`) to navigate plot
