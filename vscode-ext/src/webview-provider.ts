@@ -263,13 +263,13 @@ canvas { display: block; }
 <div id="toolbar">
     <button id="btn-prev" title="Previous plot">◀</button>
     <button id="btn-next" title="Next plot">▶</button>
+    <button id="btn-delete" title="Remove current plot">✕</button>
     <span id="plot-info">No plots</span>
     <select id="export-select">
         <option value="">Export…</option>
         <option value="png">PNG</option>
         <option value="svg">SVG</option>
     </select>
-    <button id="btn-delete" title="Delete current plot">🗑️</button>
 </div>
 <div id="canvas-container">
     <canvas id="plot-canvas"></canvas>
