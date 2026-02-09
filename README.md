@@ -2,14 +2,14 @@
 
 ![Experimental](https://img.shields.io/badge/status-experimental-orange)
 
-**jgd** is a lightweight (zero dependency) R graphics device that serializes
+**jgd** is a lightweight (C-based, zero dependency) R graphics device that serializes
 every R plotting operation as JSON and streams it over a Unix domain socket to
-an external renderer. The main applicaton today is a VS Code extension that
+an external renderer. The main application today is a VS Code extension that
 offers nice R graphics display and UX features, as per this screenshot:
 
 ![Screenshot of jgd running in VS Code](jgd-ss.png)
 
-But the **jgd** protocol is designed to be frontend-agnostic. In principle, any
+The **jgd** protocol is designed to be frontend-agnostic. While VS Code is the current development focus, in principle any
 client able to read (newline-delimited) JSON could use it to render R plots.
 
 **Caveats:** The package is experimental and may have some rough edges, despite
