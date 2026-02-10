@@ -2,8 +2,8 @@
 
 ![Experimental](https://img.shields.io/badge/status-experimental-orange)
 
-**jgd** is a lightweight (C-based, zero dependency) R graphics device that serializes
-every R plotting operation as JSON and streams it over a Unix domain socket to
+**jgd** is a lightweight (C-based, zero dependency) R graphics device. It
+works by serializing R plotting operations into JSON and then streaming to
 an external renderer. The main application today is a VS Code extension that
 offers nice R graphics display and UX features, as per this screenshot:
 
@@ -12,13 +12,11 @@ offers nice R graphics display and UX features, as per this screenshot:
 The **jgd** protocol is designed to be frontend-agnostic. While VS Code is the current development focus, in principle any
 client able to read (newline-delimited) JSON could use it to render R plots.
 
-**Caveats:** The package is experimental and may have some rough edges, despite
-my best efforts at thorough local testing. More importantly, it only supports
-unix-based systems (MacOS/Linux) at present. I hope to provide Windows support
-soon, but will need external help with testing and validation. Finally, I want
-to be transparent that this project has made _heavy_ use of AI-assisted pair
-programming (Claude). It is highly doubtful that I would have been able to put
-this together without AI help.
+**Caveats:** The package is experimental and may have some rough edges despite
+my best efforts at thorough local testing. I want to be transparent that this
+project has made _heavy_ use of AI-assisted pair programming (Claude and
+Kiro). It is highly doubtful that I would have been able to put this together
+without AI help.
 
 ## Installation
 
@@ -112,7 +110,8 @@ and
 records. All rendering happens in the client (a VS Code webview, a browser tab,
 or any future frontend). Second, it is very lightweight. The core of the R
 package is written in pure C with zero external dependencies. The only system
-dependency is the POSIX socket API, which R itself already uses.
+dependencies are the POSIX socket API (macOS/Linux) and Winsock (Windows),
+both of which R itself already uses.
 
 My idea (hope) is that we can support the main features of `httpgd`, but with a
 more stable and lightweight footprint. Ultimately, if the community agrees, we
@@ -138,10 +137,11 @@ latter cases.
 │  jgd R package (pure C)                         │
 │  ┌───────────────────────────────────────────┐  │
 │  │ DevDesc callbacks → JSON serializer       │  │
-│  │                     → Unix socket client  │──┼──┐
+│  │                     → socket client       │──┼──┐
 │  └───────────────────────────────────────────┘  │  │
 └─────────────────────────────────────────────────┘  │
-          Unix domain socket (NDJSON)                │
+     Unix domain socket (macOS/Linux) or             │
+     TCP localhost (Windows) — NDJSON                │
 ┌─────────────────────────────────────────────────┐  │
 │  Renderer (e.g. VS Code extension)              │◄─┘
 │                                                 │
@@ -180,11 +180,13 @@ using the browser's Canvas2D API.
   **raster images** (base64-encoded PNG)
 - **Auto-discovery**: `JGD_SOCKET` environment variable injected into VS Code
   terminals
-- **Export**: PNG and SVG from the toolbar dropdown
+- **Export**: PNG and SVG from the toolbar dropdown, with custom dimensions
+  (inches + DPI)
+- **Cross-platform**: Unix domain sockets on macOS/Linux, TCP on Windows
 
 ## Roadmap
 
-- [ ] **Windows support**: TCP transport as alternative to Unix domain sockets
+- [x] **Windows support**: TCP transport as alternative to Unix domain sockets
 - [ ] **Browser frontend**: Standalone renderer served over HTTP/WebSocket for
   use with Neovim, Emacs, or terminal R
 - [ ] **CRAN submission**: Package the R side for CRAN distribution
@@ -195,8 +197,6 @@ using the browser's Canvas2D API.
 
 - **No PDF export**: PNG and SVG export are supported. For PDF, convert the
   exported SVG using any standard tool (e.g. Inkscape, Chrome print-to-PDF).
-- **No Windows support (yet)**: Currently relies on Unix domain sockets (macOS
-  and Linux only). TCP transport for Windows is planned.
 
 ## Project structure
 
@@ -212,7 +212,7 @@ r-pkg/
     ├── callbacks.c        # All graphics callbacks (line, rect, text, ...)
     ├── display_list.c     # Page state and JSON frame serialization
     ├── json_writer.c      # Streaming JSON builder (no dependencies)
-    ├── transport.c        # Unix socket client + discovery
+    ├── transport.c        # Socket client + discovery (Unix + TCP)
     ├── metrics.c          # Approximation-based font metrics
     ├── color.c            # R color → CSS rgba() conversion
     ├── png_encoder.c      # Minimal uncompressed PNG encoder + base64
@@ -223,7 +223,7 @@ vscode-ext/
 ├── package.json
 └── src/
     ├── extension.ts       # Activation, commands, env var injection
-    ├── socket-server.ts   # Unix socket server + NDJSON framing
+    ├── socket-server.ts   # Socket server (Unix + TCP) + NDJSON framing
     ├── webview-provider.ts # Webview panel + Canvas2D renderer
     └── plot-history.ts    # Per-session plot history management
 ```
