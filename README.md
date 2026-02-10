@@ -9,14 +9,16 @@ offers nice R graphics display and UX features, as per this screenshot:
 
 ![Screenshot of jgd running in VS Code](jgd-ss.png)
 
-The **jgd** protocol is designed to be frontend-agnostic. While VS Code is the current development focus, in principle any
-client able to read (newline-delimited) JSON could use it to render R plots.
+The **jgd** protocol is designed to be frontend-agnostic. While VS Code is the
+current development focus, in principle any client able to read
+(newline-delimited) JSON could use it to render R plots.
 
 **Caveats:** The package is experimental and may have some rough edges despite
-my best efforts at thorough local testing. I want to be transparent that this
-project has made _heavy_ use of AI-assisted pair programming (Claude and
-Kiro). It is highly doubtful that I would have been able to put this together
-without AI help.
+my best efforts at thorough local testing. For example, I would appreciate some
+help testing a validating on Windows (which I don't have easy access to).
+Finally, I want to be transparent that this project has made _heavy_ use of
+AI-assisted pair programming (Claude). It is highly doubtful that I would have
+been able to put this together without AI help.
 
 ## Installation
 
@@ -35,8 +37,8 @@ cd jgd
 ## Build from local source
 cd r-pkg && R CMD build . && R CMD INSTALL jgd_0.0.1.tar.gz && cd ..
 
-## Or, install from GitHub (run in your R Console)
-# remotes::install_github("grantmcdermott/jgd", subdir = "r-pkg")
+## Or, install from R (requires devtools + R Tools if on Windows)
+# devtools::install("r-pkg")
 ```
 
 ### VS Code extension
