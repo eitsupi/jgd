@@ -6,10 +6,23 @@
 #' @param width Device width in inches (default 8).
 #' @param height Device height in inches (default 6).
 #' @param dpi Resolution in dots per inch (default 96).
+#' @param socket Socket address for the rendering server. Supports URI formats
+#'   (`tcp://host:port`, `unix:///path/to/socket`) or raw Unix socket paths.
+#'   Defaults to the `jgd.socket` R option, falling back to the `JGD_SOCKET`
+#'   environment variable. If `NULL`, the device discovers the socket via a
+#'   discovery file.
 #' @return Invisible `NULL`. The device is opened as a side effect.
 #' @export
-jgd = function(width = 8, height = 6, dpi = 96) {
-  .Call(C_jgd, as.double(width), as.double(height), as.double(dpi))
+jgd = function(
+  width = 8,
+  height = 6,
+  dpi = 96,
+  socket = getOption(
+    "jgd.socket",
+    default = Sys.getenv("JGD_SOCKET", unset = NULL)
+  )
+) {
+  .Call(C_jgd, as.double(width), as.double(height), as.double(dpi), socket)
 
   if (requireNamespace("later", quietly = TRUE)) {
     poll = function() {
