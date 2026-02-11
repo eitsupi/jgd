@@ -40,9 +40,7 @@ typedef int sock_t;
 
 /*
  * Parse a TCP address from socket_path into a sockaddr_in.
- * Supported formats:
- *   "tcp://host:port"  — URI format (host may be IP or "localhost")
- *   "tcp:port"         — legacy format (localhost assumed)
+ * Format: "tcp://host:port" (host may be IP or "localhost")
  * Returns 0 on success, -1 on failure.
  */
 static int parse_tcp(const char *path, struct sockaddr_in *out) {
@@ -71,14 +69,6 @@ static int parse_tcp(const char *path, struct sockaddr_in *out) {
             if (ip == INADDR_NONE) return -1;
             out->sin_addr.s_addr = ip;
         }
-        return 0;
-    }
-
-    if (strncmp(path, "tcp:", 4) == 0) {
-        int port = atoi(path + 4);
-        if (port <= 0 || port > 65535) return -1;
-        out->sin_port = htons((unsigned short)port);
-        out->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         return 0;
     }
 
@@ -143,7 +133,7 @@ static int discover_socket_path(char *out, size_t outsize) {
 static int try_connect(jgd_transport_t *t) {
     ensure_wsa();
 
-    /* Try TCP: tcp://host:port or legacy tcp:port */
+    /* Try TCP: tcp://host:port */
     struct sockaddr_in tcp_addr;
     if (parse_tcp(t->socket_path, &tcp_addr) == 0) {
         sock_t s = socket(AF_INET, SOCK_STREAM, 0);
