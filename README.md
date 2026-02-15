@@ -54,8 +54,9 @@ code --install-extension jgd-vscode-nightly.vsix
 Alternatively, build from source for local development:
 
 ```bash
-cd vscode-ext && npm install && npm run compile
-code --extensionDevelopmentPath="$(pwd)" && cd ..
+cd vscode-ext
+npm install && npm run compile
+code --extensionDevelopmentPath="$(pwd)"
 ```
 
 ## Usage
