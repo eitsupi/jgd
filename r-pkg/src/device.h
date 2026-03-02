@@ -67,7 +67,7 @@ void jgd_flush_frame(jgd_state_t *st, int incremental);
 void jgd_register_input_handler(jgd_state_t *st);
 void jgd_remove_input_handler(jgd_state_t *st);
 
-/* Parse a JSON message; if it's a resize, store dimensions in *w/*h and
+/* Parse a JSON message; if it's a resize, store dimensions in *w, *h and
    optionally extract plotIndex into *plot_index (-1 if absent).  Returns 1. */
 int jgd_try_parse_resize(const char *buf, double *w, double *h, int *plot_index);
 
