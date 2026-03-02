@@ -361,6 +361,8 @@ SEXP C_jgd_poll_resize(void) {
     if (!gdd || !gdd->dev) return Rf_ScalarLogical(FALSE);
 
     pDevDesc dd = gdd->dev;
+    if (!jgd_is_jgd_device(dd)) return Rf_ScalarLogical(FALSE);
+
     jgd_state_t *st = (jgd_state_t *)dd->deviceSpecific;
     if (!st || st->replaying || st->drawing) return Rf_ScalarLogical(FALSE);
 
