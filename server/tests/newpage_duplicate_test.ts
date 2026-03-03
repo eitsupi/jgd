@@ -113,6 +113,61 @@ Deno.test("race A: new plot at resize dims should not be tagged (cb_newPage cons
 }));
 
 // ---------------------------------------------------------------------------
+// Scenario 2b (Race A with resizeConsumed): Same as scenario 2 but with the
+// resizeConsumed flag set.  This explicitly tests the drainConsumedResize
+// path: the entry is drained without tagging, so no separate replay frame
+// is expected.
+// ---------------------------------------------------------------------------
+
+Deno.test("race A with resizeConsumed: entry drained, no replay needed", withTestHarness(async (t, { rClient, browser }) => {
+  await rClient.waitForWelcome();
+
+  // Prime: initial resize + first frame
+  browser.sendResize(800, 600);
+  await rClient.readMessage<ResizeMessage>();
+  await rClient.sendFrame({
+    ops: [{ op: "text", str: "plot1" }],
+    device: { width: 800, height: 600 },
+  }, { newPage: true });
+  await browser.waitForType<FrameMessage>("frame");
+
+  await t.step("resize sent to R", async () => {
+    browser.sendResize(900, 700);
+    const msg = await rClient.readMessage<ResizeMessage>();
+    assertEquals(msg.width, 900);
+  });
+
+  await t.step("R sends new plot at resize dims with resizeConsumed", async () => {
+    // R consumed the resize in cb_newPage's apply_pending_resize.
+    // The frame carries both newPage:true and resizeConsumed:true.
+    // The server drains the matching entry without tagging.
+    await rClient.sendFrame({
+      ops: [{ op: "text", str: "plot2-consumed" }],
+      device: { width: 900, height: 700 },
+    }, { newPage: true, resizeConsumed: true });
+    const frame = await browser.waitForType<FrameMessage>("frame");
+
+    assertEquals(
+      frame.resize,
+      undefined,
+      "New plot with resizeConsumed must not be tagged as resize",
+    );
+  });
+
+  await t.step("subsequent new plot is unaffected", async () => {
+    // The pending entry was drained by the resizeConsumed frame.
+    // A third plot should not be mistagged.
+    await rClient.sendFrame({
+      ops: [{ op: "text", str: "plot3" }],
+      device: { width: 900, height: 700 },
+    }, { newPage: true });
+    const frame = await browser.waitForType<FrameMessage>("frame");
+
+    assertEquals(frame.resize, undefined, "Plot 3 must not be tagged as resize");
+  });
+}));
+
+// ---------------------------------------------------------------------------
 // Scenario 3 (Race B): R's recv_metrics_response consumes resize during
 // drawing.  New-plot frame arrives at OLD dims with newPage:true.
 //
