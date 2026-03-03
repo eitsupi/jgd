@@ -215,6 +215,7 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (history.navigatePrevious()) {
             replayCurrentPlot();
             updateToolbar();
+            sendResizeIfNeeded();
         }
     });
 
@@ -222,6 +223,7 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (history.navigateNext()) {
             replayCurrentPlot();
             updateToolbar();
+            sendResizeIfNeeded();
         }
     });
 
@@ -340,31 +342,42 @@ export const assets: Record<string, { body: string; type: string }> = {
     // ---- Resize ----
 
     var resizeTimer = null;
-    var resizeObserver = new ResizeObserver(function() {
-        replayCurrentPlot();
+
+    function scheduleResizeMessage() {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(function() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                var msg = {
-                    type: 'resize',
-                    width: container.clientWidth,
-                    height: container.clientHeight
-                };
-                // Include plotIndex when viewing a historical (non-latest) plot
-                // so R re-renders the specific snapshot at the new dimensions.
-                // Also include plotIndex when the latest plot was deleted:
-                // R's display list still holds the deleted plot, so a normal
-                // resize would replay it.  plotIndex directs R to replay the
-                // correct snapshot for the remaining plot instead.
-                var idx = history.currentIndex();
-                var cnt = history.count();
-                if ((idx > 0 && idx < cnt) || (cnt > 0 && history.isLatestDeleted())) {
-                    msg.plotIndex = idx - 1;
-                    msg.sessionId = history.activeSessionId();
-                }
-                ws.send(JSON.stringify(msg));
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            var msg = {
+                type: 'resize',
+                width: container.clientWidth,
+                height: container.clientHeight
+            };
+            // Include plotIndex when viewing a historical (non-latest) plot
+            // so R re-renders the specific snapshot at the new dimensions.
+            // Also include plotIndex when the latest plot was deleted:
+            // R's display list still holds the deleted plot, so a normal
+            // resize would replay it.  plotIndex directs R to replay the
+            // correct snapshot for the remaining plot instead.
+            var idx = history.currentIndex();
+            var cnt = history.count();
+            if ((idx > 0 && idx < cnt) || (cnt > 0 && history.isLatestDeleted())) {
+                msg.plotIndex = idx - 1;
+                msg.sessionId = history.activeSessionId();
             }
+            ws.send(JSON.stringify(msg));
         }, 300);
+    }
+
+    function sendResizeIfNeeded() {
+        var plot = history.currentPlot();
+        if (!plot) return;
+        if (plot.device.width === container.clientWidth && plot.device.height === container.clientHeight) return;
+        scheduleResizeMessage();
+    }
+
+    var resizeObserver = new ResizeObserver(function() {
+        replayCurrentPlot();
+        scheduleResizeMessage();
     });
     resizeObserver.observe(container);
 
