@@ -313,7 +313,7 @@ export class Hub {
           } else if (isResizeConsumed) {
             // Race A: cb_newPage consumed the resize.  Drain the entry
             // without tagging — this is a new plot, not a replay.
-            consumePendingResize(session.pendingResizes, frameDims);
+            drainConsumedResize(session.pendingResizes, frameDims);
           } else if (!isNewPage) {
             // Legacy: non-newPage, non-resizeReplay frame.  For old R
             // clients that don't send resizeReplay, this preserves the
@@ -623,6 +623,33 @@ export function consumePendingResize(
   // No dimension match — R may have rendered at adjusted dimensions
   // (e.g. device constraints).  Fall back to FIFO.
   return queue.shift()!;
+}
+
+/**
+ * Drain a pending resize entry when R's cb_newPage consumed the resize
+ * (resizeConsumed flag).  Unlike consumePendingResize, this only drains
+ * when the frame dimensions match a normal (non-plotIndex) entry.  If no
+ * match is found, the queue is left unchanged — cb_newPage may have applied
+ * a resize that was already consumed by an earlier frame, so a miss is safe.
+ *
+ * This avoids the FIFO fallback in consumePendingResize which could drain
+ * an unrelated entry when dimensions don't match.
+ */
+export function drainConsumedResize(
+  queue: Array<{ plotIndex?: number; width?: number; height?: number }>,
+  frameDims: { width: number; height: number } | null,
+): void {
+  if (queue.length === 0 || !frameDims) return;
+
+  // Find the first normal entry whose dimensions match.
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i].plotIndex !== undefined) continue;
+    if (queue[i].width === frameDims.width && queue[i].height === frameDims.height) {
+      queue.splice(i, 1);
+      return;
+    }
+  }
+  // No match — leave queue unchanged.
 }
 
 /**

@@ -261,7 +261,7 @@ export class SocketServer {
                             if (isResizeReplay) {
                                 consumedEntry = consumePendingResize(session.pendingResizes, frameDims);
                             } else if (isResizeConsumed) {
-                                consumePendingResize(session.pendingResizes, frameDims);
+                                drainConsumedResize(session.pendingResizes, frameDims);
                             } else if (!isNewPage) {
                                 consumedEntry = consumePendingResize(session.pendingResizes, frameDims);
                             }
@@ -435,5 +435,26 @@ export function consumePendingResize(
 
   // No dimension match — fall back to FIFO.
   return queue.shift()!;
+}
+
+/**
+ * Drain a pending resize entry when R's cb_newPage consumed the resize
+ * (resizeConsumed flag).  Unlike consumePendingResize, this only drains
+ * when the frame dimensions match a normal (non-plotIndex) entry.  If no
+ * match is found, the queue is left unchanged.
+ */
+export function drainConsumedResize(
+  queue: Array<{ plotIndex?: number; width?: number; height?: number }>,
+  frameDims: { width: number; height: number } | null,
+): void {
+  if (queue.length === 0 || !frameDims) return;
+
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i].plotIndex !== undefined) continue;
+    if (queue[i].width === frameDims.width && queue[i].height === frameDims.height) {
+      queue.splice(i, 1);
+      return;
+    }
+  }
 }
 
