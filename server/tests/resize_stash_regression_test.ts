@@ -158,15 +158,15 @@ Deno.test("BUG: plotIndex→normal same-dims → stashed during metrics → dupl
 }));
 
 // ---------------------------------------------------------------------------
-// Scenario 2: plotIndex → normal resize at different dims → metrics plot
+// Scenario 2: plotIndex → normal resize at same dims → metrics plot
 //
-// When the normal resize has DIFFERENT dimensions from the new plot,
-// drainMatchingEntry should NOT drain the entry (dims don't match).
-// The subsequent replay frame should correctly consume the entry.
-// This is the working case — included to verify the fix doesn't break it.
+// Same drain bug as scenario 1 — both the plotIndex resize and the normal
+// resize are at 500×400, and the new plot is also drawn at 500×400.
+// drainMatchingEntry matches the newPage frame's dims and drains the entry,
+// leaving the stashed replay untagged.
 // ---------------------------------------------------------------------------
 
-Deno.test("plotIndex→normal different-dims → stashed during metrics → correctly tagged", withTestHarness(async (t, { rClient, browser }) => {
+Deno.test("BUG: plotIndex→normal same-dims → stashed during metrics → untagged replay", withTestHarness(async (t, { rClient, browser }) => {
   // Prime
   browser.sendResize(1, 1);
   await rClient.readMessage<ResizeMessage>();
@@ -204,7 +204,7 @@ Deno.test("plotIndex→normal different-dims → stashed during metrics → corr
     assertEquals(msg.width, 500);
   });
 
-  await t.step("R draws plot 2 with metrics at old dims", async () => {
+  await t.step("R draws plot 2 with metrics at resize dims", async () => {
     // R sends metrics_request during drawing
     await rClient.sendMetricsRequest(1);
     await browser.waitForType<MetricsRequestMessage>("metrics_request");

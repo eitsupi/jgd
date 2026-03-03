@@ -249,8 +249,13 @@ static void replay_snapshot(jgd_state_t *st, SEXP snap, pGEDevDesc gdd) {
     st->replaying = 1;
     GEplaySnapshot(snap, gdd);
 
+    /* GEplaySnapshot only produces a clip op (~1-2 ops) when the base
+     * display list is empty, as with grid/ggplot2 plots.  In that case
+     * we need grid::grid.refresh() to redraw from grid's internal DL. */
     if (st->page.op_count - st->last_flushed_ops <= 2) {
-        SEXP grid_ns = R_FindNamespace(Rf_mkString("grid"));
+        SEXP grid_str = PROTECT(Rf_mkString("grid"));
+        SEXP grid_ns = R_FindNamespace(grid_str);
+        UNPROTECT(1);
         if (grid_ns != R_NilValue) {
             SEXP refresh_sym = Rf_install("grid.refresh");
             SEXP call = PROTECT(Rf_lang1(refresh_sym));

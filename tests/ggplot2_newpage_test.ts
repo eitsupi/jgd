@@ -102,10 +102,10 @@ Deno.test({
           }
         }
 
-        // Categorize frames
-        const addPlotFrames = allFrames.filter(
-          (f) => !f.resize && !f.incremental,
-        );
+        // Categorize frames.
+        // Browser dispatch: resize → replaceLatest, incremental → appendOps,
+        // else (including newPage) → addPlot.  So addPlot-triggering =
+        // newPage frames + untagged complete frames.
         const newPageFrames = allFrames.filter((f) => f.newPage === true);
         const incrementalFrames = allFrames.filter(
           (f) => f.incremental === true,
@@ -118,7 +118,6 @@ Deno.test({
           `\nggplot2 frame summary: total=${allFrames.length}, ` +
             `newPage=${newPageFrames.length}, ` +
             `incremental=${incrementalFrames.length}, ` +
-            `addPlot-triggering=${addPlotFrames.length}, ` +
             `untaggedComplete=${untaggedCompleteFrames.length}`,
         );
 
@@ -141,21 +140,14 @@ Deno.test({
 
         // Key assertion: no untagged complete frames between the two plots.
         // These would cause addPlot → spurious third history entry.
+        // (addPlot count = newPage + untaggedComplete, so with 2 newPages
+        // we need 0 untaggedComplete to get exactly 2 history entries.)
         assertEquals(
           untaggedCompleteFrames.length,
           0,
           `Untagged complete frames cause spurious history entries: ` +
             `got ${untaggedCompleteFrames.length}. ` +
             `cb_newPage should flush remaining ops as incremental.`,
-        );
-
-        // Total addPlot-triggering frames must equal the number of plots.
-        assertEquals(
-          addPlotFrames.length,
-          2,
-          `Expected 2 addPlot-triggering frames for 2 plots, ` +
-            `got ${addPlotFrames.length} — browser would show ` +
-            `${addPlotFrames.length} history entries instead of 2`,
         );
       } finally {
         r.kill();
