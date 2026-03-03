@@ -91,7 +91,7 @@ export class SocketServer {
             // correct snapshot for the remaining plot instead.
             const idx = this.history.currentIndex();
             const total = this.history.count();
-            if ((total > 0 && idx < total) || this.history.isLatestDeleted()) {
+            if ((total > 0 && idx < total) || (total > 0 && this.history.isLatestDeleted())) {
                 const plotIndex = idx - 1;
                 const sessionId = this.history.getActiveSessionId();
                 this.broadcastResize(w, h, plotIndex, sessionId);

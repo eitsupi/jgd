@@ -358,7 +358,7 @@ export const assets: Record<string, { body: string; type: string }> = {
                 // correct snapshot for the remaining plot instead.
                 var idx = history.currentIndex();
                 var cnt = history.count();
-                if ((idx > 0 && idx < cnt) || history.isLatestDeleted()) {
+                if ((idx > 0 && idx < cnt) || (cnt > 0 && history.isLatestDeleted())) {
                     msg.plotIndex = idx - 1;
                     msg.sessionId = history.activeSessionId();
                 }
