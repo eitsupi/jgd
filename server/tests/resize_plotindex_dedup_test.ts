@@ -6,7 +6,7 @@ import type { FrameMessage, ResizeMessage } from "./helpers/types.ts";
  * Test suite for the interaction between plotIndex resizes and the
  * normal resize dedup guard.
  *
- * Context (trigd-1uj.20): When a user resizes the viewport while viewing
+ * Context: When a user resizes the viewport while viewing
  * a historical plot (plotIndex resize), then navigates back to the latest
  * plot, the browser sends a normal resize at the current viewport
  * dimensions.  Because the plotIndex resize already updated lastResizeW/H
@@ -78,7 +78,7 @@ Deno.test("plotIndex→normal dedup interaction", withTestHarness(async (t, { rC
     // display list.  This SHOULD reach R, but the dedup guard blocks it.
     //
     // This test documents the current (buggy) behavior.
-    // After trigd-1uj.22 is fixed, this test should be updated to
+    // After the dedup guard is fixed, this test should be updated to
     // expect the normal resize to reach R.
     browser.sendResize(500, 400); // targets latest plot — currently deduped
     browser.sendResize(700, 500); // sentinel — should arrive
@@ -255,15 +255,21 @@ Deno.test("plotIndex→normal→normal dedup chain", withTestHarness(async (t, {
       const msg2 = await rClient.readMessage<ResizeMessage>();
       assertEquals(msg2.width, 1200, "Second 500x400 should be deduped; sentinel should arrive");
       assertEquals(msg2.height, 900);
+
+      // Consume sentinel frame
+      await rClient.sendFrame(
+        { ops: [{ op: "rect" }], device: { width: 1200, height: 900 } },
+      );
+      await browser.waitForType<FrameMessage>("frame");
     } else {
       // Current buggy behavior: all deduped, sentinel arrived.
       assertEquals(msg.width, 1200, "Current behavior: all 500x400 deduped");
-    }
 
-    // Consume sentinel frame
-    await rClient.sendFrame(
-      { ops: [{ op: "rect" }], device: { width: msg.width, height: msg.height } },
-    );
-    await browser.waitForType<FrameMessage>("frame");
+      // Consume sentinel frame
+      await rClient.sendFrame(
+        { ops: [{ op: "rect" }], device: { width: 1200, height: 900 } },
+      );
+      await browser.waitForType<FrameMessage>("frame");
+    }
   });
 }));
