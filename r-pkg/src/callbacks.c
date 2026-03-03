@@ -68,7 +68,7 @@ static void cb_newPage(const pGEcontext gc, pDevDesc dd) {
         if (st->debug_frames)
             REprintf("[jgd] cb_newPage: flushing %d unflushed ops\n",
                      st->page.op_count - st->last_flushed_ops);
-        jgd_flush_frame(st, 0);
+        jgd_flush_frame(st, st->last_flushed_ops > 0 ? 1 : 0);
     }
 
     /* Move the last_snapshot (captured when the complete frame was flushed)
@@ -521,11 +521,12 @@ static void cb_mode(int mode, pDevDesc dd) {
             int incr = (st->last_flushed_ops > 0) ? 1 : 0;
             jgd_flush_frame(st, incr);
             st->last_flushed_ops = st->page.op_count;
-            /* Capture a snapshot after each complete frame for historical
-             * plot resizing.  The display list is valid at this point. */
-            if (!incr) {
-                jgd_capture_snapshot(st);
-            }
+            /* Capture a snapshot after every flush so the latest display
+             * list state is always available for historical plot resizing.
+             * ggplot2/grid sends many incremental frames; capturing only on
+             * complete frames would leave an incomplete snapshot (just the
+             * initial page setup), producing a white image on replay. */
+            jgd_capture_snapshot(st);
         }
     }
 }

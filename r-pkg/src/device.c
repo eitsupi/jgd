@@ -233,6 +233,39 @@ SEXP C_jgd(SEXP s_width, SEXP s_height, SEXP s_dpi, SEXP s_socket) {
     return R_NilValue;
 }
 
+/* ---- Snapshot replay ---- */
+
+/**
+ * Replay a snapshot, handling both base and grid graphics.
+ *
+ * GEplaySnapshot restores both base and grid state, but only replays
+ * the base graphics display list (via GEplayDisplayList).  For
+ * grid/ggplot2 plots the base display list is empty — grid maintains
+ * its own internal display list.  We detect this (very few ops after
+ * GEplaySnapshot) and call grid::grid.refresh() to trigger a full
+ * redraw from grid's internal display list.
+ */
+static void replay_snapshot(jgd_state_t *st, SEXP snap, pGEDevDesc gdd) {
+    st->replaying = 1;
+    GEplaySnapshot(snap, gdd);
+
+    if (st->page.op_count - st->last_flushed_ops <= 2) {
+        SEXP grid_ns = R_FindNamespace(Rf_mkString("grid"));
+        if (grid_ns != R_NilValue) {
+            SEXP refresh_sym = Rf_install("grid.refresh");
+            SEXP call = PROTECT(Rf_lang1(refresh_sym));
+            int err = 0;
+            R_tryEval(call, grid_ns, &err);
+            UNPROTECT(1);
+            if (st->debug_frames)
+                REprintf("[jgd] replay_snapshot: grid.refresh() -> ops=%d err=%d\n",
+                         st->page.op_count, err);
+        }
+    }
+
+    st->replaying = 0;
+}
+
 /* ---- Resize polling (shared by R callable and input handler) ---- */
 
 /* Drain resize messages from the transport socket into pending_w/pending_h.
@@ -299,9 +332,12 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
             REprintf("[jgd] poll_resize: plotIndex replay pi=%d at %.0fx%.0f\n",
                      pi, st->width * st->dpi, st->height * st->dpi);
 
-        st->replaying = 1;
-        GEplaySnapshot(snap, gdd);
-        st->replaying = 0;
+        replay_snapshot(st, snap, gdd);
+
+        if (st->debug_frames)
+            REprintf("[jgd] poll_resize: after plotIndex replay ops=%d "
+                     "last_flushed=%d\n",
+                     st->page.op_count, st->last_flushed_ops);
 
         if (st->page.op_count > st->last_flushed_ops) {
             if (st->debug_frames)
@@ -317,9 +353,7 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
          * dev.off/jgd cycle).  Skip restore in that case — the historical
          * replay already left the device in a valid state. */
         if (current != R_NilValue) {
-            st->replaying = 1;
-            GEplaySnapshot(current, gdd);
-            st->replaying = 0;
+            replay_snapshot(st, current, gdd);
         }
 
         /* Suppress re-flushing the restored current plot */
