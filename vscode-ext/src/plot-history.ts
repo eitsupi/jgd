@@ -60,6 +60,25 @@ export class PlotHistory {
         this.emitter.emit('change');
     }
 
+    appendOps(sessionId: string, plot: PlotFrame) {
+        const session = this.sessions.get(sessionId);
+        if (session && session.latestDeleted) return;
+        if (!session || session.plots.length === 0) {
+            return this.addPlot(sessionId, plot);
+        }
+        // Always append to the latest plot, not the currently viewed one.
+        // Incremental frames are always for the most recent drawing/replay,
+        // even if the user has navigated to a historical plot.
+        const latest = session.plots[session.plots.length - 1];
+        const newOps = plot.ops || [];
+        for (const op of newOps) {
+            latest.ops.push(op);
+        }
+        latest.device = plot.device;
+        this.activeSessionId = sessionId;
+        this.emitter.emit('change');
+    }
+
     replaceAtIndex(sessionId: string, plotIndex: number, plot: PlotFrame): boolean {
         const session = this.sessions.get(sessionId);
         if (!session || plotIndex < 0 || plotIndex >= session.plots.length) return false;
