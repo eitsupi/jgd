@@ -54,6 +54,12 @@ void jgd_flush_frame(jgd_state_t *st, int incremental) {
             st->resize_consumed = 0;
         }
         st->resize_replay = 0;
+    } else {
+        /* Clear flags even on serialization failure to prevent them from
+         * leaking into a subsequent frame. */
+        st->resize_replay = 0;
+        if (np)
+            st->resize_consumed = 0;
     }
 }
 
