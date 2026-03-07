@@ -69,6 +69,10 @@ export type BrowserMessage =
  * The regex scans from the opening brace up to (but not into) any nested
  * object, so a "type" inside a nested `{}` can't shadow the top-level one.
  * Falls back to empty string on malformed input.
+ *
+ * This is a fast-path optimisation for machine-serialized NDJSON from
+ * controlled code (JSON.stringify).  It does not handle adversarial
+ * payloads where string values contain embedded `"type":"..."` patterns.
  */
 export function extractType(line: string): string {
   const m = line.match(/^\s*\{[^{}]*"type"\s*:\s*"([^"]+)"/);
