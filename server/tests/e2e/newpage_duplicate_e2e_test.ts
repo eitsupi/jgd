@@ -101,11 +101,11 @@ Deno.test("E2E: resize between plots must not create ghost entries", async (t) =
       const resizeMsg = await rClient.readMessage<ResizeMessage>(5000);
       assertEquals(resizeMsg.type, "resize");
 
-      // R sends replay at new dims (server tags with resize:true)
+      // R sends replay at new dims with resizeReplay (server tags with resize:true)
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: resizeMsg.width, y1: resizeMsg.height, gc: { fill: "#ff0000" } }],
         device: { width: resizeMsg.width, height: resizeMsg.height, bg: "#ff0000" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       const info = await plotInfoText(page);

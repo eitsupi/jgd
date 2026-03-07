@@ -93,7 +93,7 @@ Deno.test("E2E: resize after delete-latest sends plotIndex and accepts R respons
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: resizeWidth, y1: resizeHeight, gc: { fill: "#ff0000" } }],
         device: { width: resizeWidth, height: resizeHeight, bg: "#ff0000" },
-      });
+      }, { resizeReplay: true, plotIndex: 0 });
       // Wait for browser to process the frame
       await delay(500);
 

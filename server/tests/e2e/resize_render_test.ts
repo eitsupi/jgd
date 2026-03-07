@@ -54,11 +54,11 @@ Deno.test("E2E: resize triggers canvas re-render", async (t) => {
       // Change viewport so the canvas has room for the larger plot
       await page.setViewportSize({ width: 1024, height: 768 });
 
-      // R responds with a frame at the new size
+      // R responds with a frame at the new size (resize replay)
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 1024, y1: 768, gc: { fill: "#cc3366" } }],
         device: { width: 1024, height: 768, bg: "#ffffff" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       const hasContent = await canvasHasContent(page);
@@ -88,7 +88,7 @@ Deno.test("E2E: resize triggers canvas re-render", async (t) => {
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 800, y1: 600, gc: { fill: "#66cc33" } }],
         device: { width: 800, height: 600, bg: "#ffffff" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       // User should stay on plot 1 — resize updates the latest plot in

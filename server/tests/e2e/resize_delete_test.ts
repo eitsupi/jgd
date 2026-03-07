@@ -77,11 +77,11 @@ Deno.test("E2E: resize after deleting latest plot must not replace remaining plo
 
       // R replays its display list — which is the histogram (BLUE),
       // because R does not know about client-side deletion.
-      // Server tags this with resize:true.
+      // R sends resizeReplay:true; server injects resize:true.
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 800, y1: 600, gc: { fill: "#0000ff" } }],
         device: { width: 800, height: 600, bg: "#0000ff" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       // The remaining RED plot must NOT be replaced by the BLUE one.
