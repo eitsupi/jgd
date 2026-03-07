@@ -65,10 +65,11 @@ export type BrowserMessage =
   | MetricsResponseMessage;
 
 /**
- * Extract the "type" field from a JSON string without full parse.
+ * Extract the top-level "type" field from a JSON string without full parse.
+ * Anchored to the opening brace so nested objects can't shadow it.
  * Falls back to empty string on malformed input.
  */
 export function extractType(line: string): string {
-  const m = line.match(/"type"\s*:\s*"([^"]+)"/);
+  const m = line.match(/^\s*\{\s*"type"\s*:\s*"([^"]+)"/);
   return m ? m[1] : "";
 }
