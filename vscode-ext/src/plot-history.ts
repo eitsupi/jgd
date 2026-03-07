@@ -64,7 +64,8 @@ export class PlotHistory {
         const session = this.sessions.get(sessionId);
         if (session && session.latestDeleted) return false;
         if (!session || session.plots.length === 0) {
-            return this.addPlot(sessionId, plot);
+            this.addPlot(sessionId, plot);
+            return true;
         }
         // Always append to the latest plot, not the currently viewed one.
         // Incremental frames are always for the most recent drawing/replay,
