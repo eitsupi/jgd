@@ -62,15 +62,21 @@ export class RClient {
     await this.#writer!.write(data);
   }
 
+  #plotCounter = 0;
+
   /** Send a frame message. */
   async sendFrame(
     plot: FrameMessage["plot"],
-    opts?: { incremental?: boolean; newPage?: boolean; resizeReplay?: boolean; plotIndex?: number },
+    opts?: { incremental?: boolean; newPage?: boolean; resizeReplay?: boolean; plotIndex?: number; plotNumber?: number },
   ): Promise<void> {
     const msg: Record<string, unknown> = { type: "frame", plot, incremental: opts?.incremental ?? false };
     if (opts?.newPage) msg.newPage = true;
     if (opts?.resizeReplay) msg.resizeReplay = true;
     if (opts?.plotIndex !== undefined) msg.plotIndex = opts.plotIndex;
+    // Auto-assign plotNumber for new (non-resize, non-incremental) frames
+    if (!opts?.resizeReplay && !opts?.incremental) {
+      msg.plotNumber = opts?.plotNumber ?? this.#plotCounter++;
+    }
     await this.send(msg);
   }
 

@@ -44,8 +44,9 @@ void jgd_flush_frame(jgd_state_t *st, int incremental) {
                  incremental, st->new_page, st->replaying, np, rr, pi,
                  st->page.op_count, st->last_flushed_ops, st->page_count);
     }
+    int pn = (st->page_count > 0) ? st->page_count - 1 : -1;
     char *json = page_serialize_frame(&st->page, st->session_id, incremental,
-                                      np, rr, pi);
+                                      np, rr, pi, pn);
     if (json) {
         transport_send(&st->transport, json, strlen(json));
         free(json);
@@ -93,6 +94,7 @@ static void cb_newPage(const pGEcontext gc, pDevDesc dd) {
                                VECTOR_ELT(st->snapshot_store, i + 1));
             SET_VECTOR_ELT(st->snapshot_store, JGD_MAX_SNAPSHOTS - 1,
                            st->last_snapshot);
+            st->evicted_count++;
         } else {
             SET_VECTOR_ELT(st->snapshot_store, st->snapshot_count,
                            st->last_snapshot);

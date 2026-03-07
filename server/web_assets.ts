@@ -55,7 +55,7 @@ export const assets: Record<string, { body: string; type: string }> = {
     }
 
     function makeSession() {
-        return { plots: [], currentIndex: -1, latestDeleted: false, nextRIndex: 0 };
+        return { plots: [], currentIndex: -1, latestDeleted: false };
     }
 
     PlotHistory.prototype.addPlot = function(sessionId, plot) {
@@ -65,7 +65,7 @@ export const assets: Record<string, { body: string; type: string }> = {
             this._sessions.set(sessionId, session);
         }
         session.latestDeleted = false;
-        plot._rIndex = session.nextRIndex++;
+        // _rIndex is set by handleFrame from R's plotNumber before calling addPlot
         session.plots.push(plot);
         while (session.plots.length > this._maxPlots) {
             session.plots.shift();
@@ -315,6 +315,9 @@ export const assets: Record<string, { body: string; type: string }> = {
         } else if (msg.incremental) {
             history.appendOps(sessionId, plot);
         } else {
+            if (typeof msg.plotNumber === 'number') {
+                plot._rIndex = msg.plotNumber;
+            }
             history.addPlot(sessionId, plot);
         }
         scheduleRender();
@@ -373,8 +376,8 @@ export const assets: Record<string, { body: string; type: string }> = {
             // R's display list still holds the deleted plot, so a normal
             // resize would replay it.  plotIndex directs R to replay the
             // correct snapshot for the remaining plot instead.
-            // Use the plot's _rIndex (R-side snapshot index) rather than the
-            // browser array index, which can diverge after deletions.
+            // _rIndex holds the plotNumber assigned by R, which R converts
+            // back to a snapshot_store index internally.
             var idx = history.currentIndex();
             var cnt = history.count();
             if ((idx > 0 && idx < cnt) || (cnt > 0 && history.isLatestDeleted())) {

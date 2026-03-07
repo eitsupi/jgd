@@ -228,6 +228,9 @@ export class SocketServer {
                         } else if (msg.incremental) {
                             accepted = this.history.appendOps(session.id, msg.plot);
                         } else {
+                            if (typeof msg.plotNumber === 'number') {
+                                msg.plot.rIndex = msg.plotNumber;
+                            }
                             this.history.addPlot(session.id, msg.plot);
                         }
                         if (accepted) this.webviewProvider.showPlot(msg.plot);

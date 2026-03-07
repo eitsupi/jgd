@@ -18,7 +18,6 @@ interface SessionHistory {
     plots: PlotFrame[];
     currentIndex: number;
     latestDeleted: boolean;
-    nextRIndex: number;
 }
 
 export class PlotHistory {
@@ -38,12 +37,12 @@ export class PlotHistory {
     addPlot(sessionId: string, plot: PlotFrame) {
         let session = this.sessions.get(sessionId);
         if (!session) {
-            session = { plots: [], currentIndex: -1, latestDeleted: false, nextRIndex: 0 };
+            session = { plots: [], currentIndex: -1, latestDeleted: false };
             this.sessions.set(sessionId, session);
         }
 
         session.latestDeleted = false;
-        plot.rIndex = session.nextRIndex++;
+        // rIndex is set by the caller from R's plotNumber before calling addPlot
         session.plots.push(plot);
         // Evict oldest if over limit
         while (session.plots.length > this.maxPlots) {

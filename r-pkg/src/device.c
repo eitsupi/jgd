@@ -104,6 +104,7 @@ SEXP C_jgd(SEXP s_width, SEXP s_height, SEXP s_dpi, SEXP s_socket) {
     st->buffered_plot_index = -1;
     st->flush_plot_index = -1;
     st->snapshot_count = 0;
+    st->evicted_count = 0;
     st->snapshot_store = PROTECT(Rf_allocVector(VECSXP, JGD_MAX_SNAPSHOTS));
     R_PreserveObject(st->snapshot_store);
     UNPROTECT(1);
@@ -319,11 +320,11 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
     int pi = st->pending_plot_index;
     st->pending_plot_index = -1;
 
-    /* plotIndex from the browser is 0-based into the current retained
-     * history (after eviction).  Both sides evict the same way (shift
-     * from front, same max size), so plotIndex maps directly to our
-     * snapshot_store index — no snapshot_base offset needed. */
-    if (pi >= 0 && pi < st->snapshot_count) {
+    /* plotIndex from the browser is an absolute plot number (plotNumber)
+     * that R assigned.  Convert to a snapshot_store index by subtracting
+     * the number of evicted snapshots. */
+    int store_idx = pi - st->evicted_count;
+    if (pi >= 0 && store_idx >= 0 && store_idx < st->snapshot_count) {
         /* Historical plot resize: replay the snapshot at new dimensions,
          * flush its frame, then restore the current display list.
          *
@@ -331,12 +332,13 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
          * and replays it through device callbacks.  replaying=1 suppresses
          * intermediate flushes (cb_mode) and snapshot saving (cb_newPage)
          * during the replay. */
-        SEXP snap = VECTOR_ELT(st->snapshot_store, pi);
+        SEXP snap = VECTOR_ELT(st->snapshot_store, store_idx);
         SEXP current = PROTECT(GEcreateSnapshot(gdd));
 
         if (st->debug_frames)
-            REprintf("[jgd] poll_resize: plotIndex replay pi=%d at %.0fx%.0f\n",
-                     pi, st->width * st->dpi, st->height * st->dpi);
+            REprintf("[jgd] poll_resize: plotIndex replay pi=%d store_idx=%d "
+                     "at %.0fx%.0f\n",
+                     pi, store_idx, st->width * st->dpi, st->height * st->dpi);
 
         replay_snapshot(st, snap, gdd);
 

@@ -25,9 +25,13 @@ void page_add_op(jgd_page_t *p, cJSON *op);
  * new plot, not a resize replay.
  * resize_replay: if 1, adds "resizeReplay":true (frame from poll_resize_impl).
  * plot_index: if >= 0, adds "plotIndex":N so the server knows which
- * historical plot this resize frame corresponds to. */
+ * historical plot this resize frame corresponds to.
+ * plot_number: if >= 0, adds "plotNumber":N — the absolute 0-based plot
+ * number for this frame, used by the browser to identify the plot for
+ * future resize requests. */
 char *page_serialize_frame(jgd_page_t *p, const char *session_id, int incremental,
-                           int new_page, int resize_replay, int plot_index);
+                           int new_page, int resize_replay, int plot_index,
+                           int plot_number);
 cJSON *gc_to_cjson(const pGEcontext gc);
 cJSON *lty_to_cjson(int lty, double lwd);
 

@@ -45,8 +45,9 @@ class MockWebviewProvider {
     }
 }
 
+let plotCounter = 0;
 function makePlotMsg(label: string, width = 400, height = 300, extra: Record<string, unknown> = {}) {
-    return {
+    const msg: Record<string, unknown> = {
         type: 'frame',
         plot: {
             version: 1,
@@ -56,6 +57,11 @@ function makePlotMsg(label: string, width = 400, height = 300, extra: Record<str
         },
         ...extra,
     };
+    // Auto-assign plotNumber for new plots (not resize replays)
+    if (!extra.resizeReplay && msg.plotNumber === undefined) {
+        msg.plotNumber = plotCounter++;
+    }
+    return msg;
 }
 
 interface ClientHelper {
@@ -123,6 +129,7 @@ describe('SocketServer', () => {
     let clients: ClientHelper[];
 
     beforeEach(async () => {
+        plotCounter = 0;
         history = new PlotHistory(50);
         provider = new MockWebviewProvider();
         server = new SocketServer(history, provider as any);
