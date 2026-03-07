@@ -93,6 +93,7 @@ export class PlotHistory {
         if (idx < 0) return false;
         plot.rIndex = rIndex;
         session.plots[idx] = plot;
+        session.latestDeleted = false;
         this.activeSessionId = sessionId;
         this.emitter.emit('change');
         return true;
