@@ -64,7 +64,7 @@ Deno.test("plotIndex resize routes correctly after >50 plots (eviction boundary)
     assertEquals(resizeMsg.type, "resize");
     assertEquals(resizeMsg.width, 600);
     assertEquals(
-      (resizeMsg as Record<string, unknown>).plotIndex, 1,
+      (resizeMsg as unknown as Record<string, unknown>).plotIndex, 1,
       "Server should forward plotIndex=1 (absolute plotNumber) to R",
     );
 
@@ -75,17 +75,17 @@ Deno.test("plotIndex resize routes correctly after >50 plots (eviction boundary)
     }, { resizeReplay: true, plotIndex: 1 });
 
     const resized = await browser.waitForMessage<FrameMessage>(
-      (msg) => msg.type === "frame" && !!(msg as Record<string, unknown>).resize,
+      (msg) => msg.type === "frame" && !!(msg as unknown as Record<string, unknown>).resize,
       5000,
     );
 
     assert(resized, "Should receive resize frame");
     assertEquals(
-      (resized as Record<string, unknown>).plotIndex, 1,
+      (resized as unknown as Record<string, unknown>).plotIndex, 1,
       "Resize response should carry plotIndex=1",
     );
     assertEquals(
-      (resized as Record<string, unknown>).plotNumber, undefined,
+      (resized as unknown as Record<string, unknown>).plotNumber, undefined,
       "Resize-replay frame should not include plotNumber",
     );
 
@@ -95,7 +95,7 @@ Deno.test("plotIndex resize routes correctly after >50 plots (eviction boundary)
 
     const resizeMsg2 = await rClient.readMessage<ResizeMessage>();
     assertEquals(
-      (resizeMsg2 as Record<string, unknown>).plotIndex, 50,
+      (resizeMsg2 as unknown as Record<string, unknown>).plotIndex, 50,
       "Server should forward plotIndex=50 to R",
     );
 
@@ -105,17 +105,17 @@ Deno.test("plotIndex resize routes correctly after >50 plots (eviction boundary)
     }, { resizeReplay: true, plotIndex: 50 });
 
     const resized2 = await browser.waitForMessage<FrameMessage>(
-      (msg) => msg.type === "frame" && !!(msg as Record<string, unknown>).resize,
+      (msg) => msg.type === "frame" && !!(msg as unknown as Record<string, unknown>).resize,
       5000,
     );
 
     assert(resized2, "Should receive resize frame for plot 50");
     assertEquals(
-      (resized2 as Record<string, unknown>).plotIndex, 50,
+      (resized2 as unknown as Record<string, unknown>).plotIndex, 50,
       "Resize response should carry plotIndex=50",
     );
     assertEquals(
-      (resized2 as Record<string, unknown>).plotNumber, undefined,
+      (resized2 as unknown as Record<string, unknown>).plotNumber, undefined,
       "Resize-replay frame should not include plotNumber",
     );
 
