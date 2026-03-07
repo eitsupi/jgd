@@ -24,20 +24,41 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
     const page = await e2e.newPage(server.httpBaseUrl);
     await resizeSender.connect(server.wsUrl);
 
-    // Consume the initial resize from browser connect
-    await rClient.readMessage<ResizeMessage>();
+    // Consume the initial resize from browser connect.
+    // Use browser's actual container dimensions for frames so that
+    // sendResizeIfNeeded() won't fire after navigation (device dims
+    // already match the container).
+    const initResize = await rClient.readMessage<ResizeMessage>();
+    const W = initResize.width ?? 400;
+    const H = initResize.height ?? 300;
 
     // Frame 1: entirely RED (#ff0000)
+    // resizeConsumed drains the initial resize's pendingResizes entry.
     await rClient.sendFrame({
-      ops: [{ op: "rect", x0: 0, y0: 0, x1: 400, y1: 300, gc: { fill: "#ff0000" } }],
-      device: { width: 400, height: 300, bg: "#ff0000" },
-    }, { newPage: true });
+      ops: [{ op: "rect", x0: 0, y0: 0, x1: W, y1: H, gc: { fill: "#ff0000" } }],
+      device: { width: W, height: H, bg: "#ff0000" },
+    }, { newPage: true, resizeConsumed: true });
     await waitForPlotInfo(page, "1 / 1");
+
+    // After Frame 1, the server forwards its deferred resize (the
+    // browser's second initial resize from ResizeObserver).  Consume
+    // it and respond so the pendingResizes queue is clean.
+    try {
+      const deferred = await rClient.readMessage<ResizeMessage>(1000);
+      if (deferred.type === "resize") {
+        await rClient.sendFrame({
+          ops: [{ op: "rect", x0: 0, y0: 0, x1: W, y1: H, gc: { fill: "#ff0000" } }],
+          device: { width: W, height: H, bg: "#ff0000" },
+        }, { resizeReplay: true });
+      }
+    } catch {
+      // No deferred resize — that's fine
+    }
 
     // Frame 2: entirely BLUE (#0000ff)
     await rClient.sendFrame({
-      ops: [{ op: "rect", x0: 0, y0: 0, x1: 400, y1: 300, gc: { fill: "#0000ff" } }],
-      device: { width: 400, height: 300, bg: "#0000ff" },
+      ops: [{ op: "rect", x0: 0, y0: 0, x1: W, y1: H, gc: { fill: "#0000ff" } }],
+      device: { width: W, height: H, bg: "#0000ff" },
     }, { newPage: true });
     await waitForPlotInfo(page, "2 / 2");
 
@@ -70,7 +91,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 800, y1: 600, gc: { fill: "#00ff00" } }],
         device: { width: 800, height: 600, bg: "#00ff00" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       const info = await page.evaluate(
@@ -110,7 +131,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 850, y1: 650, gc: { fill: "#00ff00" } }],
         device: { width: 850, height: 650, bg: "#00ff00" },
-      });
+      }, { resizeReplay: true });
 
       // Frame 2: incremental frame — simulates annotation replay (abline etc.)
       // This frame is NOT tagged resize:true by the server, so it goes through
@@ -162,7 +183,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: msg.width, y1: msg.height, gc: { fill: "#ff0000" } }],
         device: { width: msg.width, height: msg.height, bg: "#ff0000" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       const info = await page.evaluate(
@@ -194,7 +215,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 900, y1: 700, gc: { fill: "#00ff00" } }],
         device: { width: 900, height: 700, bg: "#00ff00" },
-      });
+      }, { resizeReplay: true });
       await delay(300);
 
       // Second resize
@@ -205,7 +226,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 1000, y1: 750, gc: { fill: "#ffff00" } }],
         device: { width: 1000, height: 750, bg: "#ffff00" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       // Neither resize should have added a history entry

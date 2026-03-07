@@ -9,6 +9,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
   await rClient.readMessage<ResizeMessage>();
   await rClient.sendFrame(
     { ops: [], device: { width: 1, height: 1 } },
+    { resizeReplay: true },
   );
   const primingFrame = await browser.waitForType<FrameMessage>("frame");
   const sessionId = primingFrame.plot.sessionId!;
@@ -26,6 +27,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // R responds with a frame after the plotIndex resize
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 800, height: 600 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true);
@@ -38,6 +40,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
 
     await rClient.sendFrame(
       { ops: [{ op: "circle" }], device: { width: 1024, height: 768 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true);
@@ -60,6 +63,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // Consume the frame from previous step
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 1024, height: 768 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 
@@ -70,6 +74,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     await rClient.readMessage<ResizeMessage>();
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 500, height: 400 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 
@@ -87,6 +92,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // Consume frame
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 500, height: 400 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
   });
@@ -108,6 +114,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // Consume the plotIndex frame
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 500, height: 400 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 
@@ -123,6 +130,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // Verify the frame is tagged correctly
     await rClient.sendFrame(
       { ops: [{ op: "circle" }], device: { width: 640, height: 480 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true, "Should be tagged as resize");
@@ -140,6 +148,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // Consume the plotIndex frame
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 600, height: 400 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 
@@ -154,6 +163,7 @@ Deno.test("plotIndex resize — pass-through and frame tagging", withTestHarness
     // Consume frame
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 600, height: 400 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 

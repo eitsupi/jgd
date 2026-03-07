@@ -37,6 +37,7 @@ Deno.test("resize state race — normal then plotIndex", withTestHarness(async (
   await rClient.readMessage<ResizeMessage>();
   await rClient.sendFrame(
     { ops: [{ op: "text", str: "plot2" }], device: { width: 800, height: 600 } },
+    { resizeReplay: true },
   );
   await browser.waitForType<FrameMessage>("frame");
 
@@ -66,6 +67,7 @@ Deno.test("resize state race — normal then plotIndex", withTestHarness(async (
     // This frame is the current plot (plot 2) re-rendered.
     await rClient.sendFrame(
       { ops: [{ op: "text", str: "plot2-resized" }], device: { width: 640, height: 480 } },
+      { resizeReplay: true },
     );
 
     // The browser should receive this frame as a normal resize (no plotIndex).
@@ -83,6 +85,7 @@ Deno.test("resize state race — normal then plotIndex", withTestHarness(async (
     // R processes message 2 (plotIndex resize) and sends the historical plot.
     await rClient.sendFrame(
       { ops: [{ op: "text", str: "plot1-resized" }], device: { width: 640, height: 480 } },
+      { resizeReplay: true },
     );
 
     // The browser should receive this frame with plotIndex:0.

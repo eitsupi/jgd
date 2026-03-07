@@ -52,6 +52,7 @@ Deno.test("one resize per frame — no stale queue entries", async (t) => {
     await rClient.readMessage<ResizeMessage>();
     await rClient.sendFrame(
       { ops: [{ op: "text", str: "plot2" }], device: { width: 800, height: 600 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 
@@ -81,6 +82,7 @@ Deno.test("one resize per frame — no stale queue entries", async (t) => {
       // corresponds exactly to the first resize.
       await rClient.sendFrame(
         { ops: [{ op: "text", str: "plot2-resized" }], device: { width: 640, height: 480 } },
+        { resizeReplay: true },
       );
       const resizeFrame1 = await browser.waitForType<FrameMessage>("frame");
       assertEquals(resizeFrame1.resize, true, "First frame should be a resize response");
@@ -93,6 +95,7 @@ Deno.test("one resize per frame — no stale queue entries", async (t) => {
       // R processes resize 2 (plotIndex=0) — sends another frame.
       await rClient.sendFrame(
         { ops: [{ op: "text", str: "plot1-resized" }], device: { width: 640, height: 480 } },
+        { resizeReplay: true },
       );
       const resizeFrame2 = await browser.waitForType<FrameMessage>("frame");
       assertEquals(resizeFrame2.resize, true, "Second frame should be a resize response");

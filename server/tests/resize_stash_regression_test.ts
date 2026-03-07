@@ -65,6 +65,7 @@ Deno.test("plotIndex→normal same-dims → stashed during metrics → replay ta
   // Consume the resize replay (R applies the resize after drawing plot 1)
   await rClient.sendFrame(
     { ops: [{ op: "rect" }], device: { width: 800, height: 600 } },
+    { resizeReplay: true },
   );
   const resizeFrame = await browser.waitForType<FrameMessage>("frame");
   assertEquals(resizeFrame.resize, true, "Resize replay should be tagged");
@@ -76,6 +77,7 @@ Deno.test("plotIndex→normal same-dims → stashed during metrics → replay ta
 
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 800, height: 600 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true);
@@ -180,6 +182,7 @@ Deno.test("plotIndex→normal same-dims → stashed during metrics → replay ta
   await browser.waitForType<FrameMessage>("frame");
   await rClient.sendFrame(
     { ops: [{ op: "rect" }], device: { width: 800, height: 600 } },
+    { resizeReplay: true },
   );
   await browser.waitForType<FrameMessage>("frame");
 
@@ -189,6 +192,7 @@ Deno.test("plotIndex→normal same-dims → stashed during metrics → replay ta
     await rClient.readMessage<ResizeMessage>();
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 500, height: 400 } },
+      { resizeReplay: true },
     );
     await browser.waitForType<FrameMessage>("frame");
 
@@ -330,6 +334,7 @@ Deno.test("normal resize stashed during metrics of next plot — must be tagged"
   // Consume resize replay
   await rClient.sendFrame(
     { ops: [{ op: "rect" }], device: { width: 800, height: 600 } },
+    { resizeReplay: true },
   );
   await browser.waitForType<FrameMessage>("frame");
 
@@ -412,6 +417,7 @@ Deno.test("plotIndex resize while viewing historical — no extra untagged frame
   // Consume resize replay
   await rClient.sendFrame(
     { ops: [{ op: "text", str: "ggplot2-faceted" }], device: { width: 800, height: 600 } },
+    { resizeReplay: true },
   );
   await browser.waitForType<FrameMessage>("frame");
 
@@ -437,6 +443,7 @@ Deno.test("plotIndex resize while viewing historical — no extra untagged frame
 
     await rClient.sendFrame(
       { ops: [{ op: "text", str: "ggplot2-faceted-640" }], device: { width: 640, height: 480 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true, "plotIndex replay must be tagged as resize");
@@ -457,6 +464,7 @@ Deno.test("plotIndex resize while viewing historical — no extra untagged frame
     // R replays current plot (plot 2) at 640x480
     await rClient.sendFrame(
       { ops: [{ op: "rect" }], device: { width: 640, height: 480 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true, "Normal resize replay must be tagged");

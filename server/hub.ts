@@ -318,7 +318,14 @@ export class Hub {
             // Legacy: non-newPage, non-resizeReplay frame.  For old R
             // clients that don't send resizeReplay, this preserves the
             // existing consume-and-tag behavior.
-            consumedEntry = consumePendingResize(session.pendingResizes, frameDims);
+            // Skip plotIndex entries — those are only consumed by
+            // resizeReplay frames.  A plotIndex entry can sit in the
+            // queue when the browser's sendResizeIfNeeded fires a
+            // plotIndex resize that R hasn't responded to yet; a
+            // subsequent non-resize frame must not consume it.
+            consumedEntry = consumePendingResize(
+              session.pendingResizes, frameDims, { skipPlotIndex: true },
+            );
           }
           // newPage without resizeConsumed: no action — the entry
           // survives for the subsequent resizeReplay frame.
@@ -586,8 +593,45 @@ function extractFrameMeta(line: string): FrameMeta {
 export function consumePendingResize(
   queue: Array<{ plotIndex?: number; width?: number; height?: number }>,
   frameDims: { width: number; height: number } | null,
+  opts?: { skipPlotIndex?: boolean },
 ): { plotIndex?: number } | undefined {
   if (queue.length === 0) return undefined;
+
+  // When skipPlotIndex is set (legacy path for frames without
+  // resizeReplay), skip over any leading plotIndex entries and only
+  // consume normal (non-plotIndex) entries.  plotIndex entries are
+  // reserved for resizeReplay frames from R's plotIndex-aware path.
+  // This prevents a stale plotIndex entry (e.g. from the browser's
+  // sendResizeIfNeeded after navigation) from being incorrectly
+  // consumed by a non-resize frame, which would tag it with a
+  // plotIndex and corrupt a historical plot via replaceAtIndex.
+  if (opts?.skipPlotIndex) {
+    let start = 0;
+    while (start < queue.length && queue[start].plotIndex !== undefined) {
+      start++;
+    }
+    if (start >= queue.length) return undefined;
+
+    if (!frameDims) return queue.splice(start, 1)[0];
+
+    if (queue[start].width === frameDims.width && queue[start].height === frameDims.height) {
+      return queue.splice(start, 1)[0];
+    }
+
+    let matchIdx = -1;
+    for (let i = start + 1; i < queue.length; i++) {
+      if (queue[i].plotIndex !== undefined) break;
+      if (queue[i].width === frameDims.width && queue[i].height === frameDims.height) {
+        matchIdx = i;
+      }
+    }
+    if (matchIdx >= 0) {
+      const removed = queue.splice(start, matchIdx - start + 1);
+      return removed[removed.length - 1];
+    }
+
+    return queue.splice(start, 1)[0];
+  }
 
   // plotIndex entries: always consume strictly FIFO.
   if (queue[0].plotIndex !== undefined) {

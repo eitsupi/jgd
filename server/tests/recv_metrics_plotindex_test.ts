@@ -23,6 +23,7 @@ Deno.test("plotIndex FIFO: R responds to first of two plotIndex resizes", withTe
   await rClient.readMessage<ResizeMessage>();
   await rClient.sendFrame(
     { ops: [], device: { width: 1, height: 1 } },
+    { resizeReplay: true },
   );
   const primingFrame = await browser.waitForType<FrameMessage>("frame");
   const sessionId = primingFrame.plot.sessionId!;
@@ -65,6 +66,7 @@ Deno.test("plotIndex FIFO: R responds to first of two plotIndex resizes", withTe
     // R replays snapshot[0] at 500x400.
     await rClient.sendFrame(
       { ops: [{ op: "rect", fill: "red" }], device: { width: 500, height: 400 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
 
@@ -105,6 +107,7 @@ Deno.test("plotIndex FIFO: both resizes consumed when R responds to both", withT
   await rClient.readMessage<ResizeMessage>();
   await rClient.sendFrame(
     { ops: [], device: { width: 1, height: 1 } },
+    { resizeReplay: true },
   );
   const primingFrame = await browser.waitForType<FrameMessage>("frame");
   const sessionId = primingFrame.plot.sessionId!;
@@ -132,6 +135,7 @@ Deno.test("plotIndex FIFO: both resizes consumed when R responds to both", withT
   await t.step("first plotIndex response tagged correctly", async () => {
     await rClient.sendFrame(
       { ops: [{ op: "rect", fill: "red" }], device: { width: 500, height: 400 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true);
@@ -141,6 +145,7 @@ Deno.test("plotIndex FIFO: both resizes consumed when R responds to both", withT
   await t.step("second plotIndex response tagged correctly", async () => {
     await rClient.sendFrame(
       { ops: [{ op: "rect", fill: "blue" }], device: { width: 600, height: 450 } },
+      { resizeReplay: true },
     );
     const frame = await browser.waitForType<FrameMessage>("frame");
     assertEquals(frame.resize, true);
