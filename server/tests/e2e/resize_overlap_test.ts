@@ -51,8 +51,8 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
           device: { width: W, height: H, bg: "#ff0000" },
         }, { resizeReplay: true });
       }
-    } catch {
-      // No deferred resize — that's fine
+    } catch (_e: unknown) {
+      // readMessage timeout — no deferred resize arrived, which is fine.
     }
 
     // Frame 2: entirely BLUE (#0000ff)

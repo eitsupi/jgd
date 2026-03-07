@@ -618,6 +618,9 @@ export function consumePendingResize(
       return queue.splice(start, 1)[0];
     }
 
+    // Search within the first contiguous non-plotIndex segment only.
+    // plotIndex entries act as boundaries — entries beyond them belong
+    // to a different resize context and must not be matched here.
     let matchIdx = -1;
     for (let i = start + 1; i < queue.length; i++) {
       if (queue[i].plotIndex !== undefined) break;
@@ -630,6 +633,10 @@ export function consumePendingResize(
       return removed[removed.length - 1];
     }
 
+    // FIFO fallback: consume the first non-plotIndex entry even when
+    // dimensions don't match.  This mirrors the non-skipPlotIndex path
+    // and ensures the queue doesn't grow unbounded from orphaned entries
+    // (e.g. when the browser resizes but R replays at different dims).
     return queue.splice(start, 1)[0];
   }
 
