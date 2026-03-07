@@ -162,7 +162,6 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (idx < 0) return;
         plot._rIndex = rIndex;
         session.plots[idx] = plot;
-        session.latestDeleted = false;
         this._activeSessionId = sessionId;
     };
 
