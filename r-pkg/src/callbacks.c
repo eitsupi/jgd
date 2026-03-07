@@ -44,7 +44,9 @@ void jgd_flush_frame(jgd_state_t *st, int incremental) {
                  incremental, st->new_page, st->replaying, np, rr, pi,
                  st->page.op_count, st->last_flushed_ops, st->page_count);
     }
-    int pn = (st->page_count > 0) ? st->page_count - 1 : -1;
+    /* plotNumber identifies new plots; suppress for resize replays
+     * (which already carry plotIndex) to avoid sending a misleading value. */
+    int pn = (st->page_count > 0 && pi < 0) ? st->page_count - 1 : -1;
     char *json = page_serialize_frame(&st->page, st->session_id, incremental,
                                       np, rr, pi, pn);
     if (json) {
