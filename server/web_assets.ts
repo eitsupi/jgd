@@ -79,6 +79,8 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
+        var old = session.plots[session.currentIndex];
+        if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
         session.plots[session.currentIndex] = plot;
         this._activeSessionId = sessionId;
     };
@@ -143,6 +145,8 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
+        var old = session.plots[session.plots.length - 1];
+        if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
         session.plots[session.plots.length - 1] = plot;
         this._activeSessionId = sessionId;
         // Don't change currentIndex — user stays on their historical view

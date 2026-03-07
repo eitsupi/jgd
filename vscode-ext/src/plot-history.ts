@@ -59,6 +59,8 @@ export class PlotHistory {
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
+        const old = session.plots[session.currentIndex];
+        if (old?.rIndex !== undefined) plot.rIndex = old.rIndex;
         session.plots[session.currentIndex] = plot;
         this.activeSessionId = sessionId;
         this.emitter.emit('change');
@@ -104,6 +106,8 @@ export class PlotHistory {
             this.addPlot(sessionId, plot);
             return true;
         }
+        const old = session.plots[session.plots.length - 1];
+        if (old?.rIndex !== undefined) plot.rIndex = old.rIndex;
         session.plots[session.plots.length - 1] = plot;
         // Don't change currentIndex — user stays on their historical view
         this.activeSessionId = sessionId;
