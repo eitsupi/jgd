@@ -54,13 +54,18 @@ export const assets: Record<string, { body: string; type: string }> = {
         this._maxPlots = maxPlots || 50;
     }
 
+    function makeSession() {
+        return { plots: [], currentIndex: -1, latestDeleted: false };
+    }
+
     PlotHistory.prototype.addPlot = function(sessionId, plot) {
         var session = this._sessions.get(sessionId);
         if (!session) {
-            session = { plots: [], currentIndex: -1, latestDeleted: false };
+            session = makeSession();
             this._sessions.set(sessionId, session);
         }
         session.latestDeleted = false;
+        // _rIndex is set by handleFrame from R's plotNumber before calling addPlot
         session.plots.push(plot);
         while (session.plots.length > this._maxPlots) {
             session.plots.shift();
@@ -74,6 +79,8 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
+        var old = session.plots[session.currentIndex];
+        if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
         session.plots[session.currentIndex] = plot;
         this._activeSessionId = sessionId;
     };
@@ -138,8 +145,28 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
+        var old = session.plots[session.plots.length - 1];
+        if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
         session.plots[session.plots.length - 1] = plot;
+        this._activeSessionId = sessionId;
         // Don't change currentIndex — user stays on their historical view
+    };
+
+    PlotHistory.prototype.replaceAtIndex = function(sessionId, rIndex, plot) {
+        var session = this._sessions.get(sessionId);
+        if (!session) return;
+        var idx = -1;
+        for (var i = 0; i < session.plots.length; i++) {
+            if (session.plots[i]._rIndex === rIndex) { idx = i; break; }
+        }
+        if (idx < 0) return;
+        plot._rIndex = rIndex;
+        session.plots[idx] = plot;
+        this._activeSessionId = sessionId;
+    };
+
+    PlotHistory.prototype.activeSessionId = function() {
+        return this._activeSessionId;
     };
 
     PlotHistory.prototype.currentIndex = function() {
@@ -150,6 +177,11 @@ export const assets: Record<string, { body: string; type: string }> = {
     PlotHistory.prototype.count = function() {
         var session = this._sessions.get(this._activeSessionId);
         return session ? session.plots.length : 0;
+    };
+
+    PlotHistory.prototype.isLatestDeleted = function() {
+        var session = this._sessions.get(this._activeSessionId);
+        return session ? session.latestDeleted : false;
     };
 
     // ---- DOM references ----
@@ -198,6 +230,7 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (history.navigatePrevious()) {
             replayCurrentPlot();
             updateToolbar();
+            sendResizeIfNeeded();
         }
     });
 
@@ -205,6 +238,7 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (history.navigateNext()) {
             replayCurrentPlot();
             updateToolbar();
+            sendResizeIfNeeded();
         }
     });
 
@@ -273,10 +307,17 @@ export const assets: Record<string, { body: string; type: string }> = {
         var plot = msg.plot;
         var sessionId = plot.sessionId || 'default';
         if (msg.resize) {
-            history.replaceLatest(sessionId, plot);
+            if (msg.plotIndex !== undefined) {
+                history.replaceAtIndex(sessionId, msg.plotIndex, plot);
+            } else {
+                history.replaceLatest(sessionId, plot);
+            }
         } else if (msg.incremental) {
             history.appendOps(sessionId, plot);
         } else {
+            if (typeof msg.plotNumber === 'number') {
+                plot._rIndex = msg.plotNumber;
+            }
             history.addPlot(sessionId, plot);
         }
         scheduleRender();
@@ -319,18 +360,48 @@ export const assets: Record<string, { body: string; type: string }> = {
     // ---- Resize ----
 
     var resizeTimer = null;
-    var resizeObserver = new ResizeObserver(function() {
-        replayCurrentPlot();
+
+    function scheduleResizeMessage() {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(function() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'resize',
-                    width: container.clientWidth,
-                    height: container.clientHeight
-                }));
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            var msg = {
+                type: 'resize',
+                width: container.clientWidth,
+                height: container.clientHeight
+            };
+            // Include plotIndex when viewing a historical (non-latest) plot
+            // so R re-renders the specific snapshot at the new dimensions.
+            // Also include plotIndex when the latest plot was deleted:
+            // R's display list still holds the deleted plot, so a normal
+            // resize would replay it.  plotIndex directs R to replay the
+            // correct snapshot for the remaining plot instead.
+            // _rIndex holds the plotNumber assigned by R, which R converts
+            // back to a snapshot_store index internally.
+            var idx = history.currentIndex();
+            var cnt = history.count();
+            if ((idx > 0 && idx < cnt) || (cnt > 0 && history.isLatestDeleted())) {
+                var currentPlot = history.currentPlot();
+                if (currentPlot && currentPlot._rIndex !== undefined) {
+                    msg.plotIndex = currentPlot._rIndex;
+                    msg.sessionId = history.activeSessionId();
+                }
             }
+            ws.send(JSON.stringify(msg));
         }, 300);
+    }
+
+    function sendResizeIfNeeded() {
+        var plot = history.currentPlot();
+        if (!plot) return;
+        // plot.device is guaranteed by the protocol — every frame includes device dims.
+        if (plot.device.width === container.clientWidth && plot.device.height === container.clientHeight) return;
+        scheduleResizeMessage();
+    }
+
+    var resizeObserver = new ResizeObserver(function() {
+        replayCurrentPlot();
+        scheduleResizeMessage();
     });
     resizeObserver.observe(container);
 
@@ -758,7 +829,7 @@ function plotToSvg(plot, exportW, exportH) {
                     var cx = dx + aw / 2, cy = dy + ah / 2;
                     transform = ' transform="rotate(' + (-op.rot) + ',' + cx + ',' + cy + ')"';
                 }
-                var safeHref = /^data:image\\//.test(op.data) ? op.data : svgEsc(op.data);
+                var safeHref = /^data:image\\/png[;,]/.test(op.data) ? svgEsc(op.data) : '';
                 s += svgTag('image', ' x="' + dx + '" y="' + dy + '" width="' + aw + '" height="' + ah + '" href="' + safeHref + '"' + transform, true) + '\\n';
                 break;
             }

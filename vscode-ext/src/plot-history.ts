@@ -10,6 +10,8 @@ export interface PlotFrame {
         bg: string | null;
     };
     ops: any[];
+    /** R-side snapshot index, assigned by PlotHistory on addPlot. */
+    rIndex?: number;
 }
 
 interface SessionHistory {
@@ -40,6 +42,7 @@ export class PlotHistory {
         }
 
         session.latestDeleted = false;
+        // rIndex is set by the caller from R's plotNumber before calling addPlot
         session.plots.push(plot);
         // Evict oldest if over limit
         while (session.plots.length > this.maxPlots) {
@@ -55,9 +58,44 @@ export class PlotHistory {
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
+        const old = session.plots[session.currentIndex];
+        if (old?.rIndex !== undefined) plot.rIndex = old.rIndex;
         session.plots[session.currentIndex] = plot;
         this.activeSessionId = sessionId;
         this.emitter.emit('change');
+    }
+
+    appendOps(sessionId: string, plot: PlotFrame): boolean {
+        const session = this.sessions.get(sessionId);
+        if (session && session.latestDeleted) return false;
+        if (!session || session.plots.length === 0) {
+            this.addPlot(sessionId, plot);
+            return true;
+        }
+        // Always append to the latest plot, not the currently viewed one.
+        // Incremental frames are always for the most recent drawing/replay,
+        // even if the user has navigated to a historical plot.
+        const latest = session.plots[session.plots.length - 1];
+        const newOps = plot.ops || [];
+        for (const op of newOps) {
+            latest.ops.push(op);
+        }
+        latest.device = plot.device;
+        this.activeSessionId = sessionId;
+        this.emitter.emit('change');
+        return true;
+    }
+
+    replaceAtIndex(sessionId: string, rIndex: number, plot: PlotFrame): boolean {
+        const session = this.sessions.get(sessionId);
+        if (!session) return false;
+        const idx = session.plots.findIndex(p => p.rIndex === rIndex);
+        if (idx < 0) return false;
+        plot.rIndex = rIndex;
+        session.plots[idx] = plot;
+        this.activeSessionId = sessionId;
+        this.emitter.emit('change');
+        return true;
     }
 
     replaceLatest(sessionId: string, plot: PlotFrame): boolean {
@@ -67,6 +105,8 @@ export class PlotHistory {
             this.addPlot(sessionId, plot);
             return true;
         }
+        const old = session.plots[session.plots.length - 1];
+        if (old?.rIndex !== undefined) plot.rIndex = old.rIndex;
         session.plots[session.plots.length - 1] = plot;
         // Don't change currentIndex — user stays on their historical view
         this.activeSessionId = sessionId;
@@ -96,9 +136,19 @@ export class PlotHistory {
         return session.plots[session.currentIndex];
     }
 
+    getActiveSessionId(): string {
+        return this.activeSessionId;
+    }
+
     currentIndex(): number {
         const session = this.sessions.get(this.activeSessionId);
         return session ? session.currentIndex + 1 : 0;
+    }
+
+    /** Return the R-side snapshot index of the current plot. */
+    currentRIndex(): number | undefined {
+        const plot = this.currentPlot();
+        return plot?.rIndex;
     }
 
     count(): number {
@@ -114,6 +164,11 @@ export class PlotHistory {
             session.latestDeleted = false;
         }
         this.emitter.emit('change');
+    }
+
+    isLatestDeleted(): boolean {
+        const session = this.sessions.get(this.activeSessionId);
+        return session ? session.latestDeleted : false;
     }
 
     removeCurrent(): PlotFrame | null {

@@ -19,6 +19,7 @@ export class RClient {
   #writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   #encoder = new TextEncoder();
   #buffer = "";
+  #pendingRead: Promise<ReadableStreamReadResult<string>> | null = null;
   /** Welcome message received on connect (if any). */
   serverInfo: ServerInfoMessage | null = null;
 
@@ -61,12 +62,22 @@ export class RClient {
     await this.#writer!.write(data);
   }
 
+  #plotCounter = 0;
+
   /** Send a frame message. */
   async sendFrame(
     plot: FrameMessage["plot"],
-    incremental = false,
+    opts?: { incremental?: boolean; newPage?: boolean; resizeReplay?: boolean; plotIndex?: number; plotNumber?: number },
   ): Promise<void> {
-    await this.send({ type: "frame", plot, incremental });
+    const msg: Record<string, unknown> = { type: "frame", plot, incremental: opts?.incremental ?? false };
+    if (opts?.newPage) msg.newPage = true;
+    if (opts?.resizeReplay) msg.resizeReplay = true;
+    if (opts?.plotIndex !== undefined) msg.plotIndex = opts.plotIndex;
+    // Auto-assign plotNumber for new (non-resize, non-incremental) frames
+    if (!opts?.resizeReplay && !opts?.incremental) {
+      msg.plotNumber = opts?.plotNumber ?? this.#plotCounter++;
+    }
+    await this.send(msg);
   }
 
   /** Send a metrics request. */
@@ -104,13 +115,20 @@ export class RClient {
       if (remaining <= 0) break;
 
       const { promise: timeoutPromise, cancel } = createCancellableTimeout(remaining);
+      const readPromise = this.#pendingRead ?? this.#reader!.read();
+      this.#pendingRead = null;
       try {
         const result = await Promise.race([
-          this.#reader!.read(),
+          readPromise,
           timeoutPromise,
         ]);
 
-        if (result === null) break;
+        if (result === null) {
+          // Timeout fired but the stream read is still pending.
+          // Save it so the next readMessage call can reuse it.
+          this.#pendingRead = readPromise;
+          break;
+        }
         cancel();
         const { value, done } = result as ReadableStreamReadResult<string>;
         if (done) throw new Error("Connection closed while reading");

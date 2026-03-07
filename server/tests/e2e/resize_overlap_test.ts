@@ -2,7 +2,7 @@ import { assertEquals } from "@std/assert";
 import { TestServer } from "../helpers/server.ts";
 import { RClient } from "../helpers/r_client.ts";
 import { BrowserClient } from "../helpers/browser_client.ts";
-import { E2EBrowser, readOfType, sampleCanvasColors } from "../helpers/e2e_browser.ts";
+import { E2EBrowser, plotInfoText, readOfType, sampleCanvasColors, waitForPlotInfo } from "../helpers/e2e_browser.ts";
 import { delay } from "@std/async";
 import type { ResizeMessage } from "../helpers/types.ts";
 
@@ -24,29 +24,29 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
     const page = await e2e.newPage(server.httpBaseUrl);
     await resizeSender.connect(server.wsUrl);
 
-    // Consume the initial resize from browser connect
-    await rClient.readMessage<ResizeMessage>();
+    // Consume the initial resize from browser connect.
+    // Use browser's actual container dimensions for frames so that
+    // sendResizeIfNeeded() won't fire after navigation (device dims
+    // already match the container).
+    const initResize = await rClient.readMessage<ResizeMessage>();
+    const W = initResize.width ?? 400;
+    const H = initResize.height ?? 300;
 
     // Frame 1: entirely RED (#ff0000)
     await rClient.sendFrame({
-      ops: [{ op: "rect", x0: 0, y0: 0, x1: 400, y1: 300, gc: { fill: "#ff0000" } }],
-      device: { width: 400, height: 300, bg: "#ff0000" },
-    });
-    await delay(500);
+      ops: [{ op: "rect", x0: 0, y0: 0, x1: W, y1: H, gc: { fill: "#ff0000" } }],
+      device: { width: W, height: H, bg: "#ff0000" },
+    }, { newPage: true });
+    await waitForPlotInfo(page, "1 / 1");
 
     // Frame 2: entirely BLUE (#0000ff)
     await rClient.sendFrame({
-      ops: [{ op: "rect", x0: 0, y0: 0, x1: 400, y1: 300, gc: { fill: "#0000ff" } }],
-      device: { width: 400, height: 300, bg: "#0000ff" },
-    });
-    await delay(500);
+      ops: [{ op: "rect", x0: 0, y0: 0, x1: W, y1: H, gc: { fill: "#0000ff" } }],
+      device: { width: W, height: H, bg: "#0000ff" },
+    }, { newPage: true });
+    await waitForPlotInfo(page, "2 / 2");
 
     await t.step("setup: at plot 2/2, canvas is blue", async () => {
-      const info = await page.evaluate(
-        `document.getElementById('plot-info').textContent`,
-      ) as string;
-      assertEquals(info, "2 / 2");
-
       const colors = await sampleCanvasColors(page);
       assertEquals(colors.hasBlue, true, "plot 2 should show blue");
       assertEquals(colors.hasRed, false, "plot 2 should not show red");
@@ -54,12 +54,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
 
     await t.step("navigate to plot 1, canvas is red", async () => {
       await page.evaluate(`document.getElementById('btn-prev').click()`);
-      await delay(300);
-
-      const info = await page.evaluate(
-        `document.getElementById('plot-info').textContent`,
-      ) as string;
-      assertEquals(info, "1 / 2");
+      await waitForPlotInfo(page, "1 / 2");
 
       const colors = await sampleCanvasColors(page);
       assertEquals(colors.hasRed, true, "plot 1 should show red");
@@ -80,7 +75,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 800, y1: 600, gc: { fill: "#00ff00" } }],
         device: { width: 800, height: 600, bg: "#00ff00" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       const info = await page.evaluate(
@@ -104,12 +99,9 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       // corrupts the historical plot when currentIndex != latest.
 
       // Ensure we're on plot 1
-      const infoPre = await page.evaluate(
-        `document.getElementById('plot-info').textContent`,
-      ) as string;
-      if (infoPre !== "1 / 2") {
+      if (await plotInfoText(page) !== "1 / 2") {
         await page.evaluate(`document.getElementById('btn-prev').click()`);
-        await delay(300);
+        await waitForPlotInfo(page, "1 / 2");
       }
 
       // Send resize
@@ -123,7 +115,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 850, y1: 650, gc: { fill: "#00ff00" } }],
         device: { width: 850, height: 650, bg: "#00ff00" },
-      });
+      }, { resizeReplay: true });
 
       // Frame 2: incremental frame — simulates annotation replay (abline etc.)
       // This frame is NOT tagged resize:true by the server, so it goes through
@@ -133,7 +125,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
           ops: [{ op: "line", x1: 0, y1: 325, x2: 850, y2: 325, gc: { col: "#00ff00" } }],
           device: { width: 850, height: 650, bg: "#00ff00" },
         },
-        true,  // incremental = true
+        { incremental: true },
       );
       await delay(500);
 
@@ -150,12 +142,9 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
 
     await t.step("real ResizeObserver resize — no ghost/overlap", async () => {
       // Navigate back to plot 1 (might already be there)
-      const infoPre = await page.evaluate(
-        `document.getElementById('plot-info').textContent`,
-      ) as string;
-      if (infoPre !== "1 / 2") {
+      if (await plotInfoText(page) !== "1 / 2") {
         await page.evaluate(`document.getElementById('btn-prev').click()`);
-        await delay(300);
+        await waitForPlotInfo(page, "1 / 2");
       }
 
       // Change container size via JS to trigger the actual ResizeObserver
@@ -166,16 +155,19 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       })()`);
 
       // The ResizeObserver fires -> replayCurrentPlot() + debounced resize (300ms)
-      // Wait for the debounced resize message to reach R
+      // With plotIndex support, the browser sends plotIndex=0 when viewing plot 1 of 2.
+      // Wait for the debounced resize message to reach R.
       const msg = await readOfType<ResizeMessage>(
         rClient, "resize", (m) => m.width !== 800 || m.height !== 600,
       );
 
-      // R responds with resize frame
+      // R responds with the resized version of the viewed plot (plot 1 = red).
+      // In a real session, R replays the plot 0 snapshot which produces the
+      // same red content at new dimensions.
       await rClient.sendFrame({
-        ops: [{ op: "rect", x0: 0, y0: 0, x1: msg.width, y1: msg.height, gc: { fill: "#00ff00" } }],
-        device: { width: msg.width, height: msg.height, bg: "#00ff00" },
-      });
+        ops: [{ op: "rect", x0: 0, y0: 0, x1: msg.width, y1: msg.height, gc: { fill: "#ff0000" } }],
+        device: { width: msg.width, height: msg.height, bg: "#ff0000" },
+      }, { resizeReplay: true });
       await delay(500);
 
       const info = await page.evaluate(
@@ -186,23 +178,18 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       const colors = await sampleCanvasColors(page);
       assertEquals(colors.hasRed, true, "canvas should still show plot 1 (red)");
       assertEquals(colors.hasBlue, false, "no ghost of plot 2 (blue)");
-      assertEquals(colors.hasGreen, false, "no leak of resize frame (green)");
+      assertEquals(colors.hasGreen, false, "no leak of unrelated resize frame (green)");
     });
 
     await t.step("sequential resizes — both tagged as resize", async () => {
       // Two resizes in sequence (R responds between them).
       // Both frames should be tagged resize:true -> replaceLatest.
-      const infoPre = await page.evaluate(
-        `document.getElementById('plot-info').textContent`,
-      ) as string;
-      if (infoPre !== "1 / 2") {
+      if (await plotInfoText(page) !== "1 / 2") {
         await page.evaluate(`document.getElementById('btn-prev').click()`);
-        await delay(300);
+        await waitForPlotInfo(page, "1 / 2");
       }
 
-      const infoBefore = await page.evaluate(
-        `document.getElementById('plot-info').textContent`,
-      ) as string;
+      const infoBefore = await plotInfoText(page);
 
       // First resize
       resizeSender.sendResize(900, 700);
@@ -212,7 +199,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 900, y1: 700, gc: { fill: "#00ff00" } }],
         device: { width: 900, height: 700, bg: "#00ff00" },
-      });
+      }, { resizeReplay: true });
       await delay(300);
 
       // Second resize
@@ -223,7 +210,7 @@ Deno.test("E2E: resize after history navigation must not show ghost image", asyn
       await rClient.sendFrame({
         ops: [{ op: "rect", x0: 0, y0: 0, x1: 1000, y1: 750, gc: { fill: "#ffff00" } }],
         device: { width: 1000, height: 750, bg: "#ffff00" },
-      });
+      }, { resizeReplay: true });
       await delay(500);
 
       // Neither resize should have added a history entry

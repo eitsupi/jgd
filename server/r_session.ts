@@ -21,10 +21,17 @@ let sessionCounter = 0;
  */
 export class RSession {
   id: string;
-  /** Whether the next frame should be tagged as a resize response. */
-  resizePending = false;
   lastResizeW = 0;
   lastResizeH = 0;
+  /**
+   * True when the last resize that updated lastResizeW/H was a plotIndex
+   * resize.  This flag prevents the dedup guard from suppressing the next
+   * normal resize at the same dimensions — the two target different display
+   * lists (historical snapshot vs current) so both must reach R.
+   */
+  lastResizeHadPlotIndex = false;
+  /** True when the server remapped this session's ID (retired ID dedup). */
+  remappedSessionId = false;
   private conn: RConn;
   private hub: Hub;
   private encoder = new TextEncoder();
@@ -46,6 +53,13 @@ export class RSession {
     // sends don't wait on a rejected promise forever.
     this.writeQueue = p.catch(() => {});
     return p;
+  }
+
+  /** Send a message to R, logging and swallowing send errors. */
+  trySend(data: string): void {
+    this.send(data).catch((e) => {
+      console.error(`failed to send to R session ${this.id}: ${e}`);
+    });
   }
 
   /** Close the underlying connection. */

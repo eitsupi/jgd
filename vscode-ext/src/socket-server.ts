@@ -13,9 +13,14 @@ interface RSession {
     socket: net.Socket;
     buffer: string;
     welcomeSent: boolean;
-    resizePending: boolean;
     lastResizeW: number;
     lastResizeH: number;
+    /**
+     * True when the last resize that updated lastResizeW/H was a plotIndex
+     * resize.  Prevents the dedup guard from suppressing the next normal
+     * resize at the same dimensions (they target different display lists).
+     */
+    lastResizeHadPlotIndex: boolean;
 }
 
 const isWindows = process.platform === 'win32';
@@ -58,7 +63,27 @@ export class SocketServer {
 
     start() {
         this.webviewProvider.onResize((w, h) => {
-            this.broadcastResize(w, h);
+            // When viewing a historical plot, include plotIndex and sessionId
+            // so R re-renders the correct historical snapshot.
+            // Also include plotIndex when the latest plot was deleted:
+            // R's display list still holds the deleted plot, so a normal
+            // resize would replay it.  plotIndex directs R to replay the
+            // correct snapshot for the remaining plot instead.
+            // Use the plot's rIndex (R-side snapshot index) rather than the
+            // browser array index, which can diverge after deletions.
+            const idx = this.history.currentIndex();
+            const total = this.history.count();
+            if ((total > 0 && idx < total) || (total > 0 && this.history.isLatestDeleted())) {
+                const rIndex = this.history.currentRIndex();
+                if (rIndex !== undefined) {
+                    const sessionId = this.history.getActiveSessionId();
+                    this.broadcastResize(w, h, rIndex, sessionId);
+                } else {
+                    this.broadcastResize(w, h);
+                }
+            } else {
+                this.broadcastResize(w, h);
+            }
         });
 
         this.server = net.createServer((socket) => this.handleConnection(socket));
@@ -133,7 +158,7 @@ export class SocketServer {
 
     private handleConnection(socket: net.Socket) {
         const sessionId = `session-${++this.sessionCounter}`;
-        const session: RSession = { id: sessionId, socket, buffer: '', welcomeSent: false, resizePending: false, lastResizeW: 0, lastResizeH: 0 };
+        const session: RSession = { id: sessionId, socket, buffer: '', welcomeSent: false, lastResizeW: 0, lastResizeH: 0, lastResizeHadPlotIndex: false };
         this.sessions.set(sessionId, session);
         this.notifyConnectionChange();
 
@@ -159,7 +184,6 @@ export class SocketServer {
 
                     const dims = this.webviewProvider.getPanelDimensions();
                     if (dims) {
-                        session.resizePending = true;
                         session.lastResizeW = dims.width;
                         session.lastResizeH = dims.height;
                         socket.write(JSON.stringify({ type: 'resize', width: dims.width, height: dims.height }) + '\n');
@@ -189,14 +213,24 @@ export class SocketServer {
                 case 'frame':
                     if (msg.plot) {
                         msg.plot.sessionId = session.id;
-                        const isResize = session.resizePending;
-                        if (isResize) session.resizePending = false;
+
+                        const isResizeReplay = !!msg.resizeReplay;
+                        const plotIndex = typeof msg.plotIndex === 'number' ? msg.plotIndex : undefined;
+
+                        // R self-reports resize metadata:
+                        //   resizeReplay:true  — frame from poll_resize_impl
+                        //   plotIndex:N        — which historical plot was replayed
                         let accepted = true;
-                        if (isResize) {
+                        if (isResizeReplay && plotIndex !== undefined) {
+                            accepted = this.history.replaceAtIndex(session.id, plotIndex, msg.plot);
+                        } else if (isResizeReplay) {
                             accepted = this.history.replaceLatest(session.id, msg.plot);
                         } else if (msg.incremental) {
-                            this.history.replaceCurrent(session.id, msg.plot);
+                            accepted = this.history.appendOps(session.id, msg.plot);
                         } else {
+                            if (typeof msg.plotNumber === 'number') {
+                                msg.plot.rIndex = msg.plotNumber;
+                            }
                             this.history.addPlot(session.id, msg.plot);
                         }
                         if (accepted) this.webviewProvider.showPlot(msg.plot);
@@ -230,11 +264,30 @@ export class SocketServer {
         }
     }
 
-    private broadcastResize(w: number, h: number) {
+    private broadcastResize(w: number, h: number, plotIndex?: number, sessionId?: string) {
+        // plotIndex resizes require sessionId for routing.
+        // Route to the target session only; drop if the session is dead.
+        if (plotIndex !== undefined) {
+            if (!sessionId) return;
+            const session = this.sessions.get(sessionId);
+            if (!session) return;
+            session.lastResizeW = w;
+            session.lastResizeH = h;
+            session.lastResizeHadPlotIndex = true;
+            const data = JSON.stringify({ type: 'resize', width: w, height: h, plotIndex }) + '\n';
+            session.socket.write(data);
+            return;
+        }
+
+        // Normal resize — broadcast to all sessions with dedup.
         const data = JSON.stringify({ type: 'resize', width: w, height: h }) + '\n';
         for (const session of this.sessions.values()) {
-            if (session.lastResizeW === w && session.lastResizeH === h) continue;
-            session.resizePending = true;
+            if (session.lastResizeW === w && session.lastResizeH === h) {
+                if (!session.lastResizeHadPlotIndex) continue;
+                // Fall through — allow normal resize after plotIndex at same dims.
+            }
+            session.lastResizeHadPlotIndex = false;
+
             session.lastResizeW = w;
             session.lastResizeH = h;
             session.socket.write(data);

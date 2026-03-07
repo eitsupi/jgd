@@ -34,6 +34,9 @@ export interface ResizeMessage {
   type: "resize";
   width: number;
   height: number;
+  plotIndex?: number;
+  /** Session that owns the target plot (for plotIndex routing). */
+  sessionId?: string;
 }
 
 /** Device close message from R. */
@@ -60,3 +63,18 @@ export type RMessage =
 export type BrowserMessage =
   | ResizeMessage
   | MetricsResponseMessage;
+
+/**
+ * Extract the top-level "type" field from a JSON string without full parse.
+ * The regex scans from the opening brace up to (but not into) any nested
+ * object, so a "type" inside a nested `{}` can't shadow the top-level one.
+ * Falls back to empty string on malformed input.
+ *
+ * This is a fast-path optimisation for machine-serialized NDJSON from
+ * controlled code (JSON.stringify).  It does not handle adversarial
+ * payloads where string values contain embedded `"type":"..."` patterns.
+ */
+export function extractType(line: string): string {
+  const m = line.match(/^\s*\{[^{}]*"type"\s*:\s*"([^"]+)"/);
+  return m ? m[1] : "";
+}

@@ -45,8 +45,9 @@ class MockWebviewProvider {
     }
 }
 
+let plotCounter = 0;
 function makePlotMsg(label: string, width = 400, height = 300, extra: Record<string, unknown> = {}) {
-    return {
+    const msg: Record<string, unknown> = {
         type: 'frame',
         plot: {
             version: 1,
@@ -56,6 +57,11 @@ function makePlotMsg(label: string, width = 400, height = 300, extra: Record<str
         },
         ...extra,
     };
+    // Auto-assign plotNumber for new plots (not resize replays)
+    if (!extra.resizeReplay && msg.plotNumber === undefined) {
+        msg.plotNumber = plotCounter++;
+    }
+    return msg;
 }
 
 interface ClientHelper {
@@ -123,6 +129,7 @@ describe('SocketServer', () => {
     let clients: ClientHelper[];
 
     beforeEach(async () => {
+        plotCounter = 0;
         history = new PlotHistory(50);
         provider = new MockWebviewProvider();
         server = new SocketServer(history, provider as any);
@@ -162,46 +169,74 @@ describe('SocketServer', () => {
             expect(provider.shownPlots).toHaveLength(1);
         });
 
-        it('routes incremental frame to replaceCurrent', async () => {
+        it('routes incremental frame via appendOps (ops accumulate)', async () => {
             const client = await connect();
 
             client.send(makePlotMsg('A'));
             await waitMs(50);
-            client.send(makePlotMsg('A-updated', 400, 300, { incremental: true }));
+
+            // Send incremental frame with additional ops
+            const incrMsg = {
+                type: 'frame',
+                plot: {
+                    version: 1,
+                    sessionId: '',
+                    device: { width: 400, height: 300, dpi: 96, bg: 'A' },
+                    ops: [{ op: 'line', label: 'extra' }],
+                },
+                incremental: true,
+            };
+            client.send(incrMsg);
             await waitMs(50);
 
             expect(history.count()).toBe(1);
-            expect(history.currentPlot()?.device.bg).toBe('A-updated');
+            // The original rect op + the incremental line op
+            const ops = history.currentPlot()?.ops;
+            expect(ops).toHaveLength(2);
+            expect((ops![0] as any).op).toBe('rect');
+            expect((ops![1] as any).op).toBe('line');
             expect(provider.shownPlots).toHaveLength(2);
         });
 
-        it('routes resize-response frame to replaceLatest', async () => {
+        it('routes resizeReplay frame to replaceLatest', async () => {
             const client = await connect();
 
             // Add a plot first
             client.send(makePlotMsg('A'));
             await waitMs(50);
 
-            // Trigger a resize from the webview
-            provider.triggerResize(1000, 700);
-            const resizeMsg = JSON.parse(await client.readLine());
-            expect(resizeMsg.type).toBe('resize');
-            expect(resizeMsg.width).toBe(1000);
-
-            // R responds with a resized frame
-            client.send(makePlotMsg('A-resized', 1000, 700));
+            // R responds with a resizeReplay frame
+            client.send(makePlotMsg('A-resized', 1000, 700, { resizeReplay: true }));
             await waitMs(50);
 
             // Should replace, not add
             expect(history.count()).toBe(1);
             expect(history.currentPlot()?.device.bg).toBe('A-resized');
         });
+
+        it('routes resizeReplay frame with plotIndex to replaceAtIndex', async () => {
+            const client = await connect();
+
+            // Add two plots
+            client.send(makePlotMsg('A'));
+            await waitMs(50);
+            client.send(makePlotMsg('B'));
+            await waitMs(50);
+            expect(history.count()).toBe(2);
+
+            // R sends a plotIndex resize replay for plot 0
+            client.send(makePlotMsg('A-resized', 500, 400, { resizeReplay: true, plotIndex: 0 }));
+            await waitMs(50);
+
+            // Should replace at index, not add
+            expect(history.count()).toBe(2);
+        });
     });
 
     // ---- Resize-after-delete (the jgd#11 bug) ----
 
     describe('resize after delete (jgd#11)', () => {
-        it('discards stale resize frame after latest plot was deleted', async () => {
+        it('resize after delete-latest uses plotIndex and updates correct plot', async () => {
             const client = await connect();
 
             // Two plots: RED then BLUE
@@ -211,25 +246,24 @@ describe('SocketServer', () => {
             await waitMs(50);
             expect(history.count()).toBe(2);
 
-            // Delete BLUE (latest)
+            // Delete BLUE (latest) → latestDeleted=true
             history.removeCurrent();
             expect(history.count()).toBe(1);
             expect(history.currentPlot()?.device.bg).toBe('RED');
 
-            // Trigger resize
+            // Trigger resize — should include plotIndex=0
             provider.triggerResize(1000, 700);
-            await client.readLine(); // consume resize message
+            const resizeMsg = JSON.parse(await client.readLine());
+            expect(resizeMsg.type).toBe('resize');
+            expect(resizeMsg.plotIndex).toBe(0);
 
-            // R replays BLUE (stale) as resize response
-            const plotsBefore = provider.shownPlots.length;
-            client.send(makePlotMsg('BLUE', 1000, 700));
+            // R replays snapshot[0] (RED) at new dimensions with plotIndex
+            client.send(makePlotMsg('RED-resized', 1000, 700, { resizeReplay: true, plotIndex: 0 }));
             await waitMs(50);
 
-            // RED must survive, BLUE must not reappear
+            // Plot updated via replaceAtIndex, not added
             expect(history.count()).toBe(1);
-            expect(history.currentPlot()?.device.bg).toBe('RED');
-            // showPlot should NOT have been called for the rejected frame
-            expect(provider.shownPlots.length).toBe(plotsBefore);
+            expect(history.currentPlot()?.device.bg).toBe('RED-resized');
         });
     });
 
@@ -277,32 +311,6 @@ describe('SocketServer', () => {
             expect(msg.width).toBe(500);
             expect(msg.height).toBe(400);
         });
-
-        it('first frame after connect uses replaceLatest, not addPlot', async () => {
-            // Pre-populate a plot so we can distinguish replaceLatest from addPlot
-            history.addPlot('session-1', {
-                version: 1, sessionId: 'session-1',
-                device: { width: 800, height: 600, dpi: 96, bg: 'existing' },
-                ops: [],
-            });
-            expect(history.count()).toBe(1);
-
-            const client = await connect();
-
-            // First frame from R is a resize response (resizePending armed on connect).
-            // It should replace the existing plot, not add a second one.
-            client.send(makePlotMsg('resized', 800, 600));
-            await waitMs(50);
-
-            expect(history.count()).toBe(1);
-            expect(history.currentPlot()?.device.bg).toBe('resized');
-
-            // Second frame is a genuinely new plot
-            client.send(makePlotMsg('new'));
-            await waitMs(50);
-
-            expect(history.count()).toBe(2);
-        });
     });
 
     // ---- Close message ----
@@ -338,6 +346,58 @@ describe('SocketServer', () => {
             expect(resp.id).toBe(7);
             expect(resp.width).toBe(42);
             expect(provider.measuredRequests).toHaveLength(1);
+        });
+    });
+
+    // ---- newPage frames are not tagged as resize ----
+
+    describe('newPage handling', () => {
+        it('newPage frame is added as new plot, not tagged as resize', async () => {
+            const client = await connect();
+
+            // First frame
+            client.send(makePlotMsg('A'));
+            await waitMs(50);
+            expect(history.count()).toBe(1);
+
+            // Trigger a resize
+            provider.triggerResize(1000, 700);
+            await client.readLine(); // consume resize message
+
+            // R sends a newPage frame at the new dimensions
+            // (cb_newPage consumed the resize, so this is a new plot)
+            client.send(makePlotMsg('B', 1000, 700, { newPage: true }));
+            await waitMs(50);
+
+            // Should be added as a new plot (addPlot), not replace
+            expect(history.count()).toBe(2);
+            expect(history.currentPlot()?.device.bg).toBe('B');
+        });
+
+        it('resizeReplay frame after newPage correctly replaces', async () => {
+            const client = await connect();
+
+            // First frame
+            client.send(makePlotMsg('A'));
+            await waitMs(50);
+
+            // Trigger a resize to 1000x700
+            provider.triggerResize(1000, 700);
+            await client.readLine();
+
+            // R sends a newPage frame at original dimensions
+            client.send(makePlotMsg('B', 800, 600, { newPage: true }));
+            await waitMs(50);
+
+            // New plot added
+            expect(history.count()).toBe(2);
+
+            // Now R replays the resize with resizeReplay flag
+            client.send(makePlotMsg('B-resized', 1000, 700, { resizeReplay: true }));
+            await waitMs(50);
+
+            expect(history.count()).toBe(2);
+            expect(history.currentPlot()?.device.bg).toBe('B-resized');
         });
     });
 });

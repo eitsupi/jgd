@@ -1,7 +1,7 @@
 import { assertEquals, assertNotEquals } from "@std/assert";
 import { TestServer } from "../helpers/server.ts";
 import { RClient } from "../helpers/r_client.ts";
-import { E2EBrowser, canvasHasContent, plotInfoText } from "../helpers/e2e_browser.ts";
+import { E2EBrowser, canvasHasContent, plotInfoText, waitForPlotInfo } from "../helpers/e2e_browser.ts";
 import { delay } from "@std/async";
 import type { ResizeMessage } from "../helpers/types.ts";
 
@@ -43,10 +43,9 @@ Deno.test("E2E: canvas renders a plot from R", async (t) => {
           gc: { fill: "#ff0000", col: "#000000", lwd: 2 },
         }],
         device: { width: 400, height: 300, bg: "#ffffff" },
-      });
+      }, { newPage: true });
 
-      // Wait for render (requestAnimationFrame + WebSocket round trip)
-      await delay(500);
+      await waitForPlotInfo(page, "1 / 1");
 
       const hasContent = await canvasHasContent(page);
       assertEquals(hasContent, true);
@@ -65,20 +64,14 @@ Deno.test("E2E: canvas renders a plot from R", async (t) => {
           gc: { fill: "#0000ff", col: "#000000", lwd: 1 },
         }],
         device: { width: 400, height: 300, bg: "#ffffff" },
-      });
+      }, { newPage: true });
 
-      await delay(500);
-
-      const info = await plotInfoText(page);
-      assertEquals(info, "2 / 2");
+      await waitForPlotInfo(page, "2 / 2");
     });
 
     await t.step("previous button navigates back", async () => {
       await page.evaluate(`document.getElementById('btn-prev').click()`);
-      await delay(200);
-
-      const info = await plotInfoText(page);
-      assertEquals(info, "1 / 2");
+      await waitForPlotInfo(page, "1 / 2");
 
       // Canvas still has content (the first plot)
       const hasContent = await canvasHasContent(page);
