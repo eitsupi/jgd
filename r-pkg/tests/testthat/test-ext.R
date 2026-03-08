@@ -35,8 +35,8 @@ test_that("jgd_ext rejects invalid JSON", {
   # expect_snapshot cannot be used here: testthat evaluates snapshot
   # code in a context where the current graphics device is not visible,
   # so jgd_ext fails with "not a jgd device" instead of the JSON error.
-  expect_error(jgd_ext("not valid json"), "not valid JSON")
-  expect_error(jgd_ext("{unclosed"), "not valid JSON")
+  expect_error(jgd_ext("not valid json"), "invalid JSON")
+  expect_error(jgd_ext("{unclosed"), "invalid JSON")
   # Empty string is treated as clearing (same as NULL)
   expect_invisible(jgd_ext(""))
 })
@@ -60,8 +60,8 @@ test_that("with_jgd_ext rejects invalid JSON", {
   open_jgd()
   on.exit({ graphics.off() }, add = TRUE)
 
-  expect_error(with_jgd_ext("not valid json", 1), "not valid JSON")
-  expect_error(with_jgd_ext("{unclosed", 1), "not valid JSON")
+  expect_error(with_jgd_ext("not valid json", 1), "invalid JSON")
+  expect_error(with_jgd_ext("{unclosed", 1), "invalid JSON")
 })
 
 test_that("with_jgd_ext restores NULL on exit", {

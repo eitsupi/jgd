@@ -72,7 +72,7 @@ jgd_ext = function(json = NULL) {
   }
   result = .Call(C_jgd_set_ext, json)
   if (is.character(result))
-    stop("ext is not valid JSON: ", result, call. = FALSE)
+    stop(result, call. = FALSE)
   invisible()
 }
 

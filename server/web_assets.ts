@@ -478,6 +478,16 @@ function mapFontFamily(family) {
 }
 
 function applyGc(ctx, gc) {
+    // Always reset extended Canvas2D state to defaults, even when gc is
+    // absent.  This prevents gc.ext fields from leaking into subsequent
+    // ops that lack a gc object (e.g. raster ops without gc).
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.filter = 'none';
     if (!gc) return;
     if (gc.col != null) ctx.strokeStyle = gc.col;
     if (gc.fill != null) ctx.fillStyle = gc.fill;
@@ -499,17 +509,7 @@ function applyGc(ctx, gc) {
         if (face === 3 || face === 4) style += 'italic ';
         ctx.font = style + size + 'px ' + family;
     }
-    // Experimental: apply extension fields from gc.ext.
-    // Reset extended state to defaults first, then apply if present.
-    // This prevents ext fields from leaking into subsequent ops that
-    // do not carry gc.ext.
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    ctx.filter = 'none';
+    // Apply extension fields from gc.ext if present.
     if (gc.ext) {
         if (gc.ext.blendMode != null) ctx.globalCompositeOperation = gc.ext.blendMode;
         if (gc.ext.opacity != null) ctx.globalAlpha = gc.ext.opacity;

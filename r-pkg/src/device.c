@@ -246,36 +246,59 @@ SEXP C_jgd_set_ext(SEXP s_json) {
     jgd_state_t *st = (jgd_state_t *)dd->deviceSpecific;
     if (!st) Rf_error("jgd device state is NULL");
 
-    /* Free previous ext_json */
     if (st->debug_frames)
         REprintf("[jgd] C_jgd_set_ext: json=%s replaying=%d\n",
                  (s_json != R_NilValue && TYPEOF(s_json) == STRSXP) ?
                      CHAR(STRING_ELT(s_json, 0)) : "NULL",
                  st->replaying);
-    free(st->ext_json);
-    st->ext_json = NULL;
 
-    if (s_json != R_NilValue) {
-        if (TYPEOF(s_json) != STRSXP || LENGTH(s_json) != 1)
-            Rf_error("ext must be a single JSON string or NULL");
-        const char *json = CHAR(STRING_ELT(s_json, 0));
-        if (json[0]) {
-            /* Validate JSON before storing */
-            cJSON *parsed = cJSON_Parse(json);
-            if (!parsed) {
-                /* Return error string instead of Rf_error so the caller
-                 * can signal the condition from R (avoids longjmp issues
-                 * with device state in some test harnesses). */
-                return Rf_mkString(json);
-            }
-            cJSON_Delete(parsed);
-
-            size_t len = strlen(json);
-            st->ext_json = (char *)malloc(len + 1);
-            if (!st->ext_json) Rf_error("failed to allocate ext_json");
-            memcpy(st->ext_json, json, len + 1);
-        }
+    /* NULL from R means clear ext_json */
+    if (s_json == R_NilValue) {
+        free(st->ext_json);
+        st->ext_json = NULL;
+        return R_NilValue;
     }
+
+    if (TYPEOF(s_json) != STRSXP || LENGTH(s_json) != 1)
+        Rf_error("ext must be a single JSON string or NULL");
+
+    const char *json = CHAR(STRING_ELT(s_json, 0));
+
+    /* Empty string: treat as clearing ext_json */
+    if (!json[0]) {
+        free(st->ext_json);
+        st->ext_json = NULL;
+        return R_NilValue;
+    }
+
+    /* Validate JSON before replacing ext_json.  On failure the previous
+     * ext_json is left unchanged (transactional semantics). */
+    cJSON *parsed = cJSON_Parse(json);
+    if (!parsed) {
+        /* Return a descriptive error message string instead of
+         * calling Rf_error so the caller can signal the condition
+         * from R (avoids longjmp issues with device state in some
+         * test harnesses).  The previous ext_json is preserved. */
+        const char *err = cJSON_GetErrorPtr();
+        if (err && err >= json) {
+            long pos = (long)(err - json);
+            char buf[128];
+            snprintf(buf, sizeof(buf),
+                     "invalid JSON in ext at position %ld", pos);
+            return Rf_mkString(buf);
+        }
+        return Rf_mkString("invalid JSON in ext");
+    }
+    cJSON_Delete(parsed);
+
+    size_t len = strlen(json);
+    char *new_ext = (char *)malloc(len + 1);
+    if (!new_ext) Rf_error("failed to allocate ext_json");
+    memcpy(new_ext, json, len + 1);
+
+    /* Validation and allocation succeeded — now replace ext_json */
+    free(st->ext_json);
+    st->ext_json = new_ext;
 
     return R_NilValue;
 }
