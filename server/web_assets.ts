@@ -499,6 +499,28 @@ function applyGc(ctx, gc) {
         if (face === 3 || face === 4) style += 'italic ';
         ctx.font = style + size + 'px ' + family;
     }
+    // Experimental: apply extension fields from gc.ext.
+    // Reset extended state to defaults first, then apply if present.
+    // This prevents ext fields from leaking into subsequent ops that
+    // do not carry gc.ext.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.filter = 'none';
+    if (gc.ext) {
+        if (gc.ext.blendMode != null) ctx.globalCompositeOperation = gc.ext.blendMode;
+        if (gc.ext.opacity != null) ctx.globalAlpha = gc.ext.opacity;
+        if (gc.ext.shadow) {
+            if (gc.ext.shadow.blur != null) ctx.shadowBlur = gc.ext.shadow.blur;
+            if (gc.ext.shadow.color != null) ctx.shadowColor = gc.ext.shadow.color;
+            if (gc.ext.shadow.offsetX != null) ctx.shadowOffsetX = gc.ext.shadow.offsetX;
+            if (gc.ext.shadow.offsetY != null) ctx.shadowOffsetY = gc.ext.shadow.offsetY;
+        }
+        if (gc.ext.filter != null) ctx.filter = gc.ext.filter;
+    }
 }
 
 // Generation counter to detect superseded renders — incremented each

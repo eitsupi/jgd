@@ -235,6 +235,51 @@ SEXP C_jgd(SEXP s_width, SEXP s_height, SEXP s_dpi, SEXP s_socket) {
     return R_NilValue;
 }
 
+/* Called from R: .Call(C_jgd_set_ext, json_string_or_null) */
+SEXP C_jgd_set_ext(SEXP s_json) {
+    pGEDevDesc gdd = GEcurrentDevice();
+    if (!gdd || !gdd->dev) Rf_error("no active graphics device");
+
+    pDevDesc dd = gdd->dev;
+    if (!jgd_is_jgd_device(dd)) Rf_error("current device is not a jgd device");
+
+    jgd_state_t *st = (jgd_state_t *)dd->deviceSpecific;
+    if (!st) Rf_error("jgd device state is NULL");
+
+    /* Free previous ext_json */
+    if (st->debug_frames)
+        REprintf("[jgd] C_jgd_set_ext: json=%s replaying=%d\n",
+                 (s_json != R_NilValue && TYPEOF(s_json) == STRSXP) ?
+                     CHAR(STRING_ELT(s_json, 0)) : "NULL",
+                 st->replaying);
+    free(st->ext_json);
+    st->ext_json = NULL;
+
+    if (s_json != R_NilValue) {
+        if (TYPEOF(s_json) != STRSXP || LENGTH(s_json) != 1)
+            Rf_error("ext must be a single JSON string or NULL");
+        const char *json = CHAR(STRING_ELT(s_json, 0));
+        if (json[0]) {
+            /* Validate JSON before storing */
+            cJSON *parsed = cJSON_Parse(json);
+            if (!parsed) {
+                /* Return error string instead of Rf_error so the caller
+                 * can signal the condition from R (avoids longjmp issues
+                 * with device state in some test harnesses). */
+                return Rf_mkString(json);
+            }
+            cJSON_Delete(parsed);
+
+            size_t len = strlen(json);
+            st->ext_json = (char *)malloc(len + 1);
+            if (!st->ext_json) Rf_error("failed to allocate ext_json");
+            memcpy(st->ext_json, json, len + 1);
+        }
+    }
+
+    return R_NilValue;
+}
+
 /* ---- Snapshot replay ---- */
 
 /**
@@ -374,6 +419,18 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
                      "at %.0fx%.0f\n",
                      pi, store_idx, st->width * st->dpi, st->height * st->dpi);
 
+        /* Save current page ext before the historical replay overwrites
+         * page_ext_json.  We need this to restore the current plot's ext
+         * when replaying the current snapshot afterwards. */
+        char *saved_ext = st->ext_json;
+        char *current_page_ext = st->page_ext_json
+                                     ? strdup(st->page_ext_json) : NULL;
+
+        /* Set ext_json to the historical snapshot's ext so that
+         * cb_newPage (during replay) captures the correct page_ext_json. */
+        st->ext_json = st->snapshot_ext[store_idx]
+                           ? strdup(st->snapshot_ext[store_idx]) : NULL;
+
         replay_snapshot(st, snap, gdd);
 
         if (st->debug_frames)
@@ -392,13 +449,19 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
             st->last_flushed_ops = st->page.op_count;
         }
 
-        /* Restore the current plot state.  GEcreateSnapshot can return
-         * R_NilValue if the display list is empty (e.g. right after
-         * dev.off/jgd cycle).  Skip restore in that case — the historical
-         * replay already left the device in a valid state. */
+        /* Restore the current plot state.  Set ext_json to the current
+         * page's ext (not saved_ext, which may be NULL after with_jgd_ext
+         * cleanup) so cb_newPage captures the correct page_ext_json. */
+        free(st->ext_json);
+        st->ext_json = current_page_ext;
+
         if (current != R_NilValue) {
             replay_snapshot(st, current, gdd);
         }
+
+        /* Now restore ext_json to its real value (what the user last set). */
+        free(st->ext_json);
+        st->ext_json = saved_ext;
 
         /* Suppress re-flushing the restored current plot */
         st->last_flushed_ops = st->page.op_count;
@@ -411,6 +474,11 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
             REprintf("[jgd] poll_resize: current plot replay at %.0fx%.0f\n",
                      st->width * st->dpi, st->height * st->dpi);
 
+        /* Temporarily restore ext_json from page_ext_json so that
+         * cb_newPage (during replay) captures the correct ext. */
+        char *saved_ext = st->ext_json;
+        st->ext_json = st->page_ext_json ? strdup(st->page_ext_json) : NULL;
+
         /* Replay the display list at new dimensions.
          * All intermediate flushes (cb_holdflush, cb_mode) are suppressed while
          * replaying=1 so that we emit exactly one complete frame afterwards.
@@ -419,6 +487,11 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
         st->replaying = 1;
         Rboolean ok = R_ToplevelExec(do_play_display_list, gdd);
         st->replaying = 0;
+
+        /* Restore ext_json to what it was before the replay. */
+        free(st->ext_json);
+        st->ext_json = saved_ext;
+
         if (!ok) {
             REprintf("[jgd] poll_resize: GEplayDisplayList failed (longjmp caught)\n");
             return 1;

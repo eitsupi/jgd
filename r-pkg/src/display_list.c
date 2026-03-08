@@ -69,7 +69,7 @@ cJSON *lty_to_cjson(int lty, double lwd) {
     return arr;
 }
 
-cJSON *gc_to_cjson(const pGEcontext gc) {
+cJSON *gc_to_cjson(const pGEcontext gc, const char *ext_json) {
     cJSON *g = cJSON_CreateObject();
     cJSON_AddItemToObject(g, "col", color_to_cjson(gc->col));
     cJSON_AddItemToObject(g, "fill", color_to_cjson(gc->fill));
@@ -84,6 +84,13 @@ cJSON *gc_to_cjson(const pGEcontext gc) {
     cJSON_AddNumberToObject(font, "face", gc->fontface);
     cJSON_AddNumberToObject(font, "size", gc->cex * gc->ps);
     cJSON_AddNumberToObject(font, "lineheight", gc->lineheight);
+
+    /* Experimental: embed pre-serialized JSON extension fields as gc.ext */
+    if (ext_json && ext_json[0]) {
+        cJSON *ext = cJSON_Parse(ext_json);
+        if (ext)
+            cJSON_AddItemToObject(g, "ext", ext);
+    }
 
     return g;
 }
