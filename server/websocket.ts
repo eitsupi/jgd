@@ -69,8 +69,9 @@ class WebSocketClient implements BrowserClient {
         break;
 
       case "ping":
-        // Echo back as pong for client-side ordering probes (e.g. tests
-        // that need to confirm no other message was delivered).
+        // Echo back as pong.  Used for client-side ordering probes (tests
+        // verify non-delivery by racing a frame waiter against the pong)
+        // and as a lightweight health-check for monitoring.
         this.send(JSON.stringify({ type: "pong" }));
         break;
 

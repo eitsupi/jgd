@@ -89,20 +89,17 @@ Deno.test({
         // extra untagged frame, which the browser would treat as a new plot 3.
         //
         // Send a ping sentinel: because WebSocket messages are ordered, any
-        // frame queued before the pong will arrive first.  If we receive the
-        // pong without seeing a frame, no extra frame was delivered.
-        let extraFrame: FrameMessage | null = null;
-        const pingDone = browser.sendPing(5000);
-        try {
-          extraFrame = await browser.waitForType<FrameMessage>("frame", 5000);
-        } catch {
-          // pong arrived first — no extra frame
-        }
-        await pingDone;
+        // frame queued before the pong will arrive first.  Race the pong
+        // against a frame waiter — if the pong wins, no extra frame arrived.
+        const sentinel = Symbol("pong");
+        const extraFrame = await Promise.race([
+          browser.waitForType<FrameMessage>("frame", 10000).catch(() => null),
+          browser.sendPing(5000).then(() => sentinel),
+        ]);
 
         assertEquals(
           extraFrame,
-          null,
+          sentinel,
           "No extra frame should arrive after plotIndex resize (would create spurious plot 3)",
         );
       } finally {

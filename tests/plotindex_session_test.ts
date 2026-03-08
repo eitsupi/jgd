@@ -86,27 +86,23 @@ Deno.test({
         // the server would tag it as plotIndex=0, corrupting history.
 
         // Send a ping sentinel: any server-side message queued before the
-        // pong will arrive first.  If the pong comes without a resize frame,
-        // we know the server correctly dropped the plotIndex resize.
-        let resizeFrame: FrameMessage | null = null;
-        const pingDone = browser.sendPing(5000);
-        try {
-          resizeFrame = await browser.waitForMessage<FrameMessage>(
+        // pong will arrive first.  Race the pong against a frame waiter —
+        // if the pong wins, the server correctly dropped the plotIndex resize.
+        const sentinel = Symbol("pong");
+        const resizeFrame = await Promise.race([
+          browser.waitForMessage<FrameMessage>(
             (msg) =>
               msg.type === "frame" && (msg as FrameMessage).resize === true,
-            5000,
-          );
-        } catch {
-          // pong arrived first — no resize frame delivered.
-          resizeFrame = null;
-        }
-        await pingDone;
+            10000,
+          ).catch(() => null),
+          browser.sendPing(5000).then(() => sentinel),
+        ]);
 
         // No frame should arrive — session 1 is dead and cannot re-render.
         // The server should drop the plotIndex resize entirely.
         assertEquals(
           resizeFrame,
-          null,
+          sentinel,
           "No resize frame should arrive — session 1 is dead and cannot re-render plot 1",
         );
       } finally {

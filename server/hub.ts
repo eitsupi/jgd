@@ -244,6 +244,8 @@ export class Hub {
         }
 
         // Ensure the frame carries the server-assigned sessionId.
+        // R always places sessionId inside the plot object (see
+        // display_list.c), so we only check msg.plot.sessionId here.
         if (session.id) {
           if (msg.plot) {
             if (msg.plot.sessionId !== undefined) {
