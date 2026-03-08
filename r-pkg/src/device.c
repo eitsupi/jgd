@@ -246,19 +246,53 @@ SEXP C_jgd(SEXP s_width, SEXP s_height, SEXP s_dpi, SEXP s_socket) {
  * its own internal display list.  We detect this (very few ops after
  * GEplaySnapshot) and call grid::grid.refresh() to trigger a full
  * redraw from grid's internal display list.
+ *
+ * Both GEplaySnapshot and R_FindNamespace can longjmp on error.
+ * We guard GEplaySnapshot with R_ToplevelExec and use the safe
+ * R_NamespaceRegistry lookup instead of R_FindNamespace to ensure
+ * st->replaying is always reset even on error.
  */
+
+typedef struct {
+    SEXP snap;
+    pGEDevDesc gdd;
+} replay_snapshot_args_t;
+
+static void do_play_snapshot(void *data) {
+    replay_snapshot_args_t *args = (replay_snapshot_args_t *)data;
+    GEplaySnapshot(args->snap, args->gdd);
+}
+
+static void do_play_display_list(void *data) {
+    pGEDevDesc gdd = (pGEDevDesc)data;
+    GEplayDisplayList(gdd);
+}
+
 static void replay_snapshot(jgd_state_t *st, SEXP snap, pGEDevDesc gdd) {
     st->replaying = 1;
-    GEplaySnapshot(snap, gdd);
+
+    /* PROTECT snap during R_ToplevelExec: although snap is typically
+     * reachable via snapshot_store or the caller's PROTECT frame,
+     * R_ToplevelExec may trigger GC in a new top-level context. */
+    PROTECT(snap);
+    replay_snapshot_args_t args = { snap, gdd };
+    Rboolean ok = R_ToplevelExec(do_play_snapshot, &args);
+    UNPROTECT(1);
+    if (!ok) {
+        REprintf("[jgd] replay_snapshot: GEplaySnapshot failed (longjmp caught)\n");
+        st->replaying = 0;
+        return;
+    }
 
     /* GEplaySnapshot only produces a clip op (~1-2 ops) when the base
      * display list is empty, as with grid/ggplot2 plots.  In that case
      * we need grid::grid.refresh() to redraw from grid's internal DL. */
     if (st->page.op_count - st->last_flushed_ops <= 2) {
-        SEXP grid_str = PROTECT(Rf_mkString("grid"));
-        SEXP grid_ns = R_FindNamespace(grid_str);
-        UNPROTECT(1);
-        if (grid_ns != R_NilValue) {
+        /* Use R_NamespaceRegistry lookup instead of R_FindNamespace to
+         * avoid longjmp on error (grid is a base package, always loaded). */
+        SEXP grid_ns = Rf_findVarInFrame(R_NamespaceRegistry,
+                                         Rf_install("grid"));
+        if (grid_ns != R_UnboundValue && grid_ns != R_NilValue) {
             SEXP refresh_sym = Rf_install("grid.refresh");
             SEXP call = PROTECT(Rf_lang1(refresh_sym));
             int err = 0;
@@ -383,8 +417,12 @@ static int poll_resize_impl(jgd_state_t *st, pDevDesc dd, pGEDevDesc gdd) {
          * This prevents the browser from receiving untagged incremental frames
          * that would be misrouted (appendOps to the wrong history slot). */
         st->replaying = 1;
-        GEplayDisplayList(gdd);
+        Rboolean ok = R_ToplevelExec(do_play_display_list, gdd);
         st->replaying = 0;
+        if (!ok) {
+            REprintf("[jgd] poll_resize: GEplayDisplayList failed (longjmp caught)\n");
+            return 1;
+        }
 
         /* Send the complete replayed frame as a single flush.  The server will
          * tag this frame with resize:true so the browser does replaceLatest

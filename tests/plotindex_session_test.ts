@@ -85,23 +85,28 @@ Deno.test({
         // where session 2 would render its own plot at new dimensions and
         // the server would tag it as plotIndex=0, corrupting history.
 
-        let resizeFrame: FrameMessage | null = null;
-        try {
-          resizeFrame = await browser.waitForMessage<FrameMessage>(
+        // Send a ping sentinel: any server-side message queued before the
+        // pong will arrive first.  Race the pong against a frame waiter —
+        // if the pong wins, the server correctly dropped the plotIndex resize.
+        // AbortController cancels the losing waiter so it doesn't consume
+        // later messages.
+        const ac = new AbortController();
+        const sentinel = Symbol("pong");
+        const resizeFrame = await Promise.race([
+          browser.waitForMessage<FrameMessage>(
             (msg) =>
               msg.type === "frame" && (msg as FrameMessage).resize === true,
-            3000,
-          );
-        } catch {
-          // Timeout — no resize frame arrived.
-          resizeFrame = null;
-        }
+            10000,
+            ac.signal,
+          ).catch(() => null),
+          browser.sendPing(5000).then(() => { ac.abort(); return sentinel; }),
+        ]);
 
         // No frame should arrive — session 1 is dead and cannot re-render.
         // The server should drop the plotIndex resize entirely.
         assertEquals(
           resizeFrame,
-          null,
+          sentinel,
           "No resize frame should arrive — session 1 is dead and cannot re-render plot 1",
         );
       } finally {

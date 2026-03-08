@@ -30,8 +30,13 @@ export class PlotHistory {
         this.maxPlots = maxPlots;
     }
 
-    onDidChange(listener: () => void) {
+    onDidChange(listener: () => void): { dispose(): void } {
         this.emitter.on('change', listener);
+        return {
+            dispose: () => {
+                this.emitter.removeListener('change', listener);
+            },
+        };
     }
 
     addPlot(sessionId: string, plot: PlotFrame) {

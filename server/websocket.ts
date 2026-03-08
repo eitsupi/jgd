@@ -68,6 +68,13 @@ class WebSocketClient implements BrowserClient {
         this.hub.handleMetricsResponse(data);
         break;
 
+      case "ping":
+        // Echo back as pong.  Used for client-side ordering probes (tests
+        // verify non-delivery by racing a frame waiter against the pong)
+        // and as a lightweight health-check for monitoring.
+        this.send(JSON.stringify({ type: "pong" }));
+        break;
+
       default:
         if (this.hub.verbose) {
           console.error(`unknown browser message type: ${type}`);

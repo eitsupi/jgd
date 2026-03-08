@@ -63,9 +63,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.executeCommand('setContext', 'jgd.hasPlots', false);
 
-    history.onDidChange(() => {
-        vscode.commands.executeCommand('setContext', 'jgd.hasPlots', history.count() > 0);
-    });
+    context.subscriptions.push(
+        history.onDidChange(() => {
+            vscode.commands.executeCommand('setContext', 'jgd.hasPlots', history.count() > 0);
+        })
+    );
 }
 
 export function deactivate() {

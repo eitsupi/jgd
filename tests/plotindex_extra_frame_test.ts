@@ -87,16 +87,22 @@ Deno.test({
         // CRITICAL: No extra frames should arrive after the resize.
         // Bug 1 also manifests as the current plot restoration leaking an
         // extra untagged frame, which the browser would treat as a new plot 3.
-        let extraFrame: FrameMessage | null = null;
-        try {
-          extraFrame = await browser.waitForType<FrameMessage>("frame", 2000);
-        } catch {
-          // Timeout is expected — no extra frame should arrive
-        }
+        //
+        // Send a ping sentinel: because WebSocket messages are ordered, any
+        // frame queued before the pong will arrive first.  Race the pong
+        // against a frame waiter — if the pong wins, no extra frame arrived.
+        // AbortController cancels the losing waiter so it doesn't consume
+        // later messages.
+        const ac = new AbortController();
+        const sentinel = Symbol("pong");
+        const extraFrame = await Promise.race([
+          browser.waitForType<FrameMessage>("frame", 10000, ac.signal).catch(() => null),
+          browser.sendPing(5000).then(() => { ac.abort(); return sentinel; }),
+        ]);
 
         assertEquals(
           extraFrame,
-          null,
+          sentinel,
           "No extra frame should arrive after plotIndex resize (would create spurious plot 3)",
         );
       } finally {

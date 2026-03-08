@@ -64,8 +64,9 @@ export class AutoMetricsBrowserClient {
   waitForType<T extends ServerMessage = ServerMessage>(
     type: string,
     timeoutMs = 10_000,
+    signal?: AbortSignal,
   ): Promise<T> {
-    return this.#inner.waitForType<T>(type, timeoutMs);
+    return this.#inner.waitForType<T>(type, timeoutMs, signal);
   }
 
   /** Send a resize message. */
@@ -82,8 +83,21 @@ export class AutoMetricsBrowserClient {
   waitForMessage<T extends ServerMessage = ServerMessage>(
     predicate: (msg: ServerMessage) => boolean,
     timeoutMs = 10_000,
+    signal?: AbortSignal,
   ): Promise<T> {
-    return this.#inner.waitForMessage<T>(predicate, timeoutMs);
+    return this.#inner.waitForMessage<T>(predicate, timeoutMs, signal);
+  }
+
+  /**
+   * Send a ping and wait for the pong.
+   *
+   * Because the server is single-threaded and WebSocket messages are
+   * ordered, any server-side message produced while handling earlier
+   * messages will be sent before the pong.  Used with Promise.race as
+   * a deterministic ordering probe for non-delivery assertions.
+   */
+  sendPing(timeoutMs = 5000): Promise<void> {
+    return this.#inner.sendPing(timeoutMs);
   }
 
   /** Close the connection and stop the metrics loop. */
