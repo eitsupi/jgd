@@ -224,7 +224,8 @@ export class SocketServer {
                         if (isResizeReplay && plotIndex !== undefined) {
                             accepted = this.history.replaceAtIndex(session.id, plotIndex, msg.plot);
                         } else if (isResizeReplay) {
-                            accepted = this.history.replaceLatest(session.id, msg.plot);
+                            const plotNumber = typeof msg.plotNumber === 'number' ? msg.plotNumber : undefined;
+                            accepted = this.history.replaceLatest(session.id, msg.plot, plotNumber);
                         } else if (msg.incremental) {
                             accepted = this.history.appendOps(session.id, msg.plot);
                         } else {

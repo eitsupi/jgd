@@ -139,13 +139,19 @@ export const assets: Record<string, { body: string; type: string }> = {
         return session.plots[session.currentIndex];
     };
 
-    PlotHistory.prototype.replaceLatest = function(sessionId, plot) {
+    PlotHistory.prototype.replaceLatest = function(sessionId, plot, expectedRIndex) {
         var session = this._sessions.get(sessionId);
         if (session && session.latestDeleted) return;
         if (!session || session.plots.length === 0) {
             return this.addPlot(sessionId, plot);
         }
         var old = session.plots[session.plots.length - 1];
+        // If expectedRIndex is provided, verify we're replacing the right plot.
+        // A new plot may have been added after the resize was sent, so the
+        // latest plot's _rIndex won't match — skip the stale replacement.
+        if (expectedRIndex !== undefined && old._rIndex !== undefined && old._rIndex !== expectedRIndex) {
+            return;
+        }
         if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
         session.plots[session.plots.length - 1] = plot;
         this._activeSessionId = sessionId;
@@ -310,7 +316,9 @@ export const assets: Record<string, { body: string; type: string }> = {
             if (msg.plotIndex !== undefined) {
                 history.replaceAtIndex(sessionId, msg.plotIndex, plot);
             } else {
-                history.replaceLatest(sessionId, plot);
+                // Normal resize replay — use plotNumber to verify the replay
+                // targets the latest plot and not one that was superseded.
+                history.replaceLatest(sessionId, plot, msg.plotNumber);
             }
         } else if (msg.incremental) {
             history.appendOps(sessionId, plot);

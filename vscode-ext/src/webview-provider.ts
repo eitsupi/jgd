@@ -390,10 +390,16 @@ function mapFontFamily(family) {
     return family + ', sans-serif';
 }
 
+let replayGeneration = 0;
+
 async function replay(plot) {
+    const gen = ++replayGeneration;
     const dpr = window.devicePixelRatio || 1;
     const containerW = container.clientWidth;
     const containerH = container.clientHeight;
+
+    // Skip if container not visible (zero dimensions)
+    if (containerW <= 0 || containerH <= 0) return;
 
     const plotW = plot.device.width;
     const plotH = plot.device.height;
@@ -423,6 +429,7 @@ async function replay(plot) {
 
     const ops = plot.ops;
     for (let i = 0; i < ops.length; i++) {
+        if (replayGeneration !== gen) return; // aborted — newer replay started
         await renderOp(ctx, ops[i], plotH);
     }
 }
