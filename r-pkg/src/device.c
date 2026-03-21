@@ -338,11 +338,13 @@ static void do_play_display_list(void *data) {
 }
 
 /* Find grid state in a snapshot SEXP by looking for the pkgName="grid"
- * attribute.  Returns the grid state VECSXP or R_NilValue. */
-static SEXP find_grid_state(SEXP snap) {
+ * attribute.  Returns the grid state VECSXP (with LENGTH >= 2) or
+ * R_NilValue if not found or malformed. */
+SEXP find_grid_state(SEXP snap) {
     for (int i = 1; i < LENGTH(snap); i++) {
         SEXP st_i = VECTOR_ELT(snap, i);
-        if (st_i != R_NilValue && TYPEOF(st_i) == VECSXP) {
+        if (st_i != R_NilValue && TYPEOF(st_i) == VECSXP &&
+            LENGTH(st_i) >= 2) {
             SEXP pn = Rf_getAttrib(st_i, Rf_install("pkgName"));
             if (pn != R_NilValue && TYPEOF(pn) == STRSXP &&
                 strcmp(CHAR(STRING_ELT(pn, 0)), "grid") == 0)

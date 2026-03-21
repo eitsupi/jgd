@@ -27,20 +27,12 @@ static void jgd_capture_snapshot(jgd_state_t *st) {
     if (snap != R_NilValue) {
         PROTECT(snap);
         if (st->debug_frames) {
-            /* Find grid state in snapshot by pkgName */
-            for (int si = 1; si < LENGTH(snap); si++) {
-                SEXP st_i = VECTOR_ELT(snap, si);
-                if (st_i != R_NilValue && TYPEOF(st_i) == VECSXP) {
-                    SEXP pn = Rf_getAttrib(st_i, Rf_install("pkgName"));
-                    if (pn != R_NilValue && TYPEOF(pn) == STRSXP &&
-                        strcmp(CHAR(STRING_ELT(pn, 0)), "grid") == 0) {
-                        SEXP idx = VECTOR_ELT(st_i, 1);
-                        REprintf("[jgd] capture_snapshot: grid DL index=%d page_count=%d ops=%d\n",
-                                 (idx != R_NilValue && TYPEOF(idx) == INTSXP) ? INTEGER(idx)[0] : -1,
-                                 st->page_count, st->page.op_count);
-                        break;
-                    }
-                }
+            SEXP gs = find_grid_state(snap);
+            if (gs != R_NilValue) {
+                SEXP idx = VECTOR_ELT(gs, 1);
+                REprintf("[jgd] capture_snapshot: grid DL index=%d page_count=%d ops=%d\n",
+                         (idx != R_NilValue && TYPEOF(idx) == INTSXP) ? INTEGER(idx)[0] : -1,
+                         st->page_count, st->page.op_count);
             }
         }
         if (st->last_snapshot != R_NilValue)
