@@ -149,7 +149,7 @@ export const assets: Record<string, { body: string; type: string }> = {
         // If expectedRIndex is provided, verify we're replacing the right plot.
         // A new plot may have been added after the resize was sent, so the
         // latest plot's _rIndex won't match — skip the stale replacement.
-        if (expectedRIndex !== undefined && old._rIndex !== undefined && old._rIndex !== expectedRIndex) {
+        if (expectedRIndex !== undefined && old && old._rIndex !== undefined && old._rIndex !== expectedRIndex) {
             return;
         }
         if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
