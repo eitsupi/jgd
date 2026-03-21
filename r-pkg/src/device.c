@@ -444,9 +444,12 @@ static void replay_snapshot(jgd_state_t *st, SEXP snap, pGEDevDesc gdd) {
                  "new_ops=%d\n",
                  st->page.op_count, ops_before, new_ops);
 
-    /* If GEplaySnapshot produced very few ops, the base DL was empty
-     * (grid/ggplot2 case) — need grid.refresh() to redraw. */
-    if (new_ops <= 2) {
+    /* If GEplaySnapshot produced very few NEW ops, the base DL was empty
+     * (grid/ggplot2 case) — need grid.refresh() to redraw.
+     * A negative new_ops means cb_newPage reset op_count during replay
+     * (base graphics path via GE_RestoreState → GENewPage), which is
+     * normal for base-graphics plots — no grid.refresh() needed. */
+    if (new_ops >= 0 && new_ops <= 2) {
 #if defined(R_VERSION) && R_VERSION >= R_Version(4, 5, 0)
         SEXP grid_ns = R_getVarEx(Rf_install("grid"), R_NamespaceRegistry, FALSE, R_UnboundValue);
 #else
