@@ -125,7 +125,8 @@ static void cb_newPage(const pGEcontext gc, pDevDesc dd) {
     double w_px = st->width * st->dpi;
     double h_px = st->height * st->dpi;
     page_init(&st->page, w_px, h_px, st->dpi, gc->fill);
-    st->page_count++;
+    if (!st->replaying)
+        st->page_count++;
     st->last_flushed_ops = 0;
     if (!st->replaying)
         st->new_page = 1;
