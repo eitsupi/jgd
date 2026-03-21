@@ -433,6 +433,8 @@ async function replay(plot) {
         await renderOp(ctx, ops[i], plotH);
         if (replayGeneration !== gen) { ctx.restore(); return; }
     }
+
+    ctx.restore();
 }
 
 async function renderOp(ctx, op, plotH) {
