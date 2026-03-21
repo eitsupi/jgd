@@ -410,6 +410,8 @@ async function replay(plot) {
     const drawW = plotW * scale;
     const drawH = plotH * scale;
 
+    if (replayGeneration !== gen) return;
+
     canvas.width = drawW * dpr;
     canvas.height = drawH * dpr;
     canvas.style.width = drawW + 'px';
