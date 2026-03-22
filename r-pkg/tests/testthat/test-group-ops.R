@@ -108,6 +108,34 @@ test_that("with_jgd_group emits endGroup even on error", {
   expect_equal(sum(op_types == "endGroup"), 1)
 })
 
+test_that("with_jgd_group tolerates auto-close when expr triggers new page", {
+  # plot.new() inside with_jgd_group triggers cb_newPage which auto-closes
+  # the group.  The on.exit jgd_end_group() should not error.
+  # The first plot.new() sets up the page; the second (inside the group)
+  # triggers a new page and the auto-close.
+  expect_warning(
+    with_mock_jgd({
+      plot.new()
+      with_jgd_group('{"opacity":0.5}', {
+        rect(0, 0, 1, 1)
+        plot.new()  # triggers cb_newPage → auto-close
+      })
+    }),
+    "unclosed group"
+  )
+})
+
+test_that("with_jgd_group re-throws non-matching endGroup errors", {
+  # If jgd_end_group fails with a different error (e.g., no jgd device),
+  # that error must propagate.
+  graphics.off()
+  expect_error(
+    with_jgd_group('{"opacity":0.5}', {
+      rect(0, 0, 1, 1)
+    })
+  )
+})
+
 test_that("nested groups produce correct op sequence", {
   msgs = with_mock_jgd({
     plot.new()
