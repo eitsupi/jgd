@@ -102,14 +102,23 @@ static void cb_newPage(const pGEcontext gc, pDevDesc dd) {
      * (it won't be cleared until C_initDisplayList runs later in
      * grid.newpage).
      *
-     * Only re-capture when the existing snapshot contains grid state —
-     * for base-only plots the flush-time snapshot already has the
-     * complete base DL, and re-capturing here would lose it (the base
-     * DL is already empty at this point). */
+     * Only re-capture when the existing snapshot's grid DL index is
+     * incomplete (dlIndex <= 1).  If grid's DL is already complete
+     * or no grid state exists, keep the flush-time snapshot to
+     * preserve base DL content (important for base-only and mixed
+     * base+grid plots). */
     if (st->page_count > 0 && !st->replaying &&
-        st->last_snapshot != R_NilValue &&
-        find_grid_state(st->last_snapshot) != R_NilValue)
-        jgd_capture_snapshot(st);
+        st->last_snapshot != R_NilValue) {
+        SEXP gs = find_grid_state(st->last_snapshot);
+        if (gs != R_NilValue) {
+            SEXP idx = VECTOR_ELT(gs, 1);
+            int dlIndex = (idx != R_NilValue && TYPEOF(idx) == INTSXP &&
+                           LENGTH(idx) > 0)
+                              ? INTEGER(idx)[0] : -1;
+            if (dlIndex <= 1)
+                jgd_capture_snapshot(st);
+        }
+    }
     if (st->page_count > 0 && !st->replaying && st->last_snapshot != R_NilValue) {
         if (st->snapshot_count >= JGD_MAX_SNAPSHOTS) {
             /* Shift snapshots and their ext strings left by one */
