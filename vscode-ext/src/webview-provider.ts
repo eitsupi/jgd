@@ -433,15 +433,17 @@ function effectToFilter(effect) {
 function applyGlowEffect(ctx, effect) {
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
-    const tmpCanvas = document.createElement('canvas');
-    tmpCanvas.width = w;
-    tmpCanvas.height = h;
-    tmpCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
+    const origCanvas = document.createElement('canvas');
+    origCanvas.width = w;
+    origCanvas.height = h;
+    origCanvas.getContext('2d')!.drawImage(ctx.canvas, 0, 0);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
     ctx.filter = 'blur(' + (effect.radius ?? 3) + 'px) brightness(' + (effect.brightness ?? 1.5) + ')';
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(tmpCanvas, 0, 0);
+    ctx.drawImage(origCanvas, 0, 0);
+    ctx.filter = 'none';
+    ctx.drawImage(origCanvas, 0, 0);
     ctx.restore();
 }
 

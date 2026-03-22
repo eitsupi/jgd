@@ -567,3 +567,33 @@ test_that("frame ext is independent of gc ext", {
   expect_false(is.null(gc_ext))
   expect_equal(gc_ext$blendMode, "multiply")
 })
+
+test_that("frame ext glow + gc.ext opacity produces correct frame data", {
+  # Regression test for jgd-8qz: glow post-effect with gc.ext opacity
+  # rendered blank in the browser due to additive blending on white bg.
+  # This test verifies the R-side frame data is correctly formed.
+  msgs <- with_mock_jgd({
+    jgd_frame_ext('{"postEffects":[{"type":"glow"}]}')
+    jgd_ext('{"opacity":0.5}')
+    plot.new()
+    rect(0.1, 0.1, 0.9, 0.9, col = "red")
+    jgd_ext(NULL)
+    jgd_frame_ext(NULL)
+  })
+
+  frames <- extract_frames(msgs)
+  expect_true(length(frames) >= 1)
+
+  frame <- frames[[1]]
+  # Frame should have glow postEffect
+  expect_false(is.null(frame$ext))
+  expect_equal(frame$ext$postEffects[[1]]$type, "glow")
+
+  # Drawing ops should have gc.ext with opacity
+  rect_ops <- Filter(
+    function(o) identical(o$op, "rect"),
+    frame$plot$ops
+  )
+  expect_true(length(rect_ops) >= 1)
+  expect_equal(rect_ops[[1]]$gc$ext$opacity, 0.5)
+})

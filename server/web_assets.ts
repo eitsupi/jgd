@@ -564,19 +564,27 @@ function effectToFilter(effect) {
     }
 }
 
-// Apply a glow post-effect: draw a blurred bright copy with additive blending.
+// Apply a glow post-effect: draw a blurred bright copy behind the original.
+// Previous approach used additive blending ('lighter') which washed out to
+// white on opaque backgrounds.  Instead, we now draw the blurred+bright
+// version first, then layer the original on top — this produces a visible
+// halo regardless of background color or drawing opacity.
 function applyGlowEffect(ctx, effect) {
     var w = ctx.canvas.width;
     var h = ctx.canvas.height;
-    var tmpCanvas = document.createElement('canvas');
-    tmpCanvas.width = w;
-    tmpCanvas.height = h;
-    tmpCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
+    var origCanvas = document.createElement('canvas');
+    origCanvas.width = w;
+    origCanvas.height = h;
+    origCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Draw blurred+bright version onto main canvas (replaces content)
+    ctx.clearRect(0, 0, w, h);
     ctx.filter = 'blur(' + (effect.radius ?? 3) + 'px) brightness(' + (effect.brightness ?? 1.5) + ')';
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(tmpCanvas, 0, 0);
+    ctx.drawImage(origCanvas, 0, 0);
+    // Layer the sharp original on top
+    ctx.filter = 'none';
+    ctx.drawImage(origCanvas, 0, 0);
     ctx.restore();
 }
 
