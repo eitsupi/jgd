@@ -8,7 +8,8 @@ jgd_frame_ext(json = NULL)
 }
 \arguments{
 \item{json}{A single JSON string representing the extension object, or
-\code{NULL} to clear.  Must be valid JSON; an error is raised otherwise.}
+\code{NULL} or \code{""} to clear.  Non-empty strings must be valid JSON; an error
+is raised otherwise.}
 }
 \value{
 Called for its side effect; returns \code{NULL} invisibly.

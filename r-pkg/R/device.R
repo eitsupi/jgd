@@ -103,7 +103,8 @@ with_jgd_ext = function(json, expr) {
 #' useful for frame-wide properties such as post-processing effects.
 #'
 #' @param json A single JSON string representing the extension object, or
-#'   `NULL` to clear.  Must be valid JSON; an error is raised otherwise.
+#'   `NULL` or `""` to clear.  Non-empty strings must be valid JSON; an error
+#'   is raised otherwise.
 #' @return Called for its side effect; returns `NULL` invisibly.
 #' @section Lifecycle:
 #' **Experimental.** This API may change in future versions.
