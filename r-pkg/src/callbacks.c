@@ -180,10 +180,11 @@ static void cb_newPage(const pGEcontext gc, pDevDesc dd) {
                               ? cJSON_Parse(st->page_ext_json)
                               : NULL;
 
-    /* Capture frame-level ext similarly. */
+    /* Capture frame-level ext similarly.  page_free() already freed
+     * page.frame_ext, and page_init() set it to NULL, so no cJSON_Delete
+     * is needed here (unlike page_ext_parsed which lives on jgd_state_t). */
     free(st->page_frame_ext_json);
     st->page_frame_ext_json = st->frame_ext_json ? strdup(st->frame_ext_json) : NULL;
-    cJSON_Delete(st->page.frame_ext);
     st->page.frame_ext = (st->page_frame_ext_json && st->page_frame_ext_json[0])
                               ? cJSON_Parse(st->page_frame_ext_json)
                               : NULL;

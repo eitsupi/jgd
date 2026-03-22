@@ -346,10 +346,8 @@ SEXP C_jgd_set_frame_ext(SEXP s_json) {
     }
     cJSON_Delete(parsed);
 
-    size_t len = strlen(json);
-    char *new_ext = (char *)malloc(len + 1);
+    char *new_ext = strdup(json);
     if (!new_ext) Rf_error("failed to allocate frame_ext_json");
-    memcpy(new_ext, json, len + 1);
 
     free(st->frame_ext_json);
     st->frame_ext_json = new_ext;
