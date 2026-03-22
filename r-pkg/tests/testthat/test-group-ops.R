@@ -126,12 +126,17 @@ test_that("with_jgd_group tolerates auto-close when expr triggers new page", {
 })
 
 test_that("with_jgd_group re-throws non-matching endGroup errors", {
-  # If jgd_end_group fails with a different error (e.g., no jgd device),
-  # that error must propagate.
-  graphics.off()
+  # jgd_begin_group must succeed so we reach the on.exit cleanup.
+  # Then we close the device inside expr, so jgd_end_group fails with
+  # "no active graphics device" — a non-matching error that must propagate.
+  open_jgd = function() suppressWarnings(jgd(socket = "tcp://127.0.0.1:1"))
+  open_jgd()
+  on.exit(graphics.off(), add = TRUE)
+
   expect_error(
     with_jgd_group('{"opacity":0.5}', {
       rect(0, 0, 1, 1)
+      dev.off()  # close device so on.exit jgd_end_group fails differently
     })
   )
 })
