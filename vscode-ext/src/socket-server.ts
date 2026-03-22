@@ -215,7 +215,7 @@ export class SocketServer {
                         msg.plot.sessionId = session.id;
 
                         const isResizeReplay = !!msg.resizeReplay;
-                        const plotIndex = typeof msg.plotIndex === 'number' ? msg.plotIndex : undefined;
+                        const plotIndex = (typeof msg.plotIndex === 'number' && Number.isFinite(msg.plotIndex)) ? msg.plotIndex : undefined;
 
                         // R self-reports resize metadata:
                         //   resizeReplay:true  — frame from poll_resize_impl
