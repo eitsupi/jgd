@@ -412,9 +412,9 @@ function mapFontFamily(family) {
     return family + ', sans-serif';
 }
 
-// Group stack for beginGroup/endGroup compositing.
-let _groupStack = [];
-let _currentClip = null;
+function makeRenderCtx() {
+    return { groupStack: [], currentClip: null };
+}
 
 function effectToFilter(effect) {
     switch (effect.type) {
@@ -519,12 +519,11 @@ async function doReplay(plot, gen) {
         }
 
         const ops = plot.ops;
-        _groupStack = [];
-        _currentClip = null;
+        const rc = makeRenderCtx();
         for (let i = 0; i < ops.length; i++) {
             if (replayGeneration !== gen) return;
-            const currentCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : ctx;
-            await renderOp(currentCtx, ops[i], plotH);
+            const currentCtx = rc.groupStack.length > 0 ? rc.groupStack[rc.groupStack.length - 1].ctx : ctx;
+            await renderOp(currentCtx, ops[i], plotH, rc);
             if (replayGeneration !== gen) return;
         }
 
@@ -535,13 +534,12 @@ async function doReplay(plot, gen) {
             ctx.save();
         }
     } finally {
-        _groupStack = [];
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
 }
 
-async function renderOp(ctx, op, plotH) {
+async function renderOp(ctx, op, plotH, rc) {
     switch (op.op) {
         case 'line': {
             applyGc(ctx, op.gc);
@@ -618,7 +616,7 @@ async function renderOp(ctx, op, plotH) {
             break;
         }
         case 'clip': {
-            _currentClip = { x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1 };
+            rc.currentClip = { x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1 };
             ctx.restore();
             ctx.save();
             ctx.beginPath();
@@ -633,14 +631,14 @@ async function renderOp(ctx, op, plotH) {
             const groupCtx = groupCanvas.getContext('2d');
             groupCtx.setTransform(ctx.getTransform());
             groupCtx.save();
-            if (_currentClip) {
+            if (rc.currentClip) {
                 groupCtx.beginPath();
-                groupCtx.rect(_currentClip.x0, _currentClip.y0,
-                              _currentClip.x1 - _currentClip.x0,
-                              _currentClip.y1 - _currentClip.y0);
+                groupCtx.rect(rc.currentClip.x0, rc.currentClip.y0,
+                              rc.currentClip.x1 - rc.currentClip.x0,
+                              rc.currentClip.y1 - rc.currentClip.y0);
                 groupCtx.clip();
             }
-            _groupStack.push({
+            rc.groupStack.push({
                 parentCtx: ctx,
                 ctx: groupCtx,
                 canvas: groupCanvas,
@@ -649,8 +647,8 @@ async function renderOp(ctx, op, plotH) {
             break;
         }
         case 'endGroup': {
-            if (_groupStack.length === 0) break;
-            const group = _groupStack.pop();
+            if (rc.groupStack.length === 0) break;
+            const group = rc.groupStack.pop();
             const parentCtx = group.parentCtx;
             parentCtx.save();
             if (group.ext) {
@@ -762,11 +760,10 @@ function handleExport(format, exportW, exportH) {
             offCtx.fillRect(0, 0, plotW, plotH);
         }
         (async () => {
-            _groupStack = [];
-            _currentClip = null;
+            const rc = makeRenderCtx();
             for (const op of currentPlot.ops) {
-                const curCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : offCtx;
-                await renderOp(curCtx, op, plotH);
+                const curCtx = rc.groupStack.length > 0 ? rc.groupStack[rc.groupStack.length - 1].ctx : offCtx;
+                await renderOp(curCtx, op, plotH, rc);
             }
             if (currentPlot.frameExt && currentPlot.frameExt.postEffects) {
                 applyPostEffects(offCtx, currentPlot.frameExt.postEffects);
@@ -836,6 +833,7 @@ function plotToSvg(plot, exportW, exportH) {
 
     let clipId = 0;
     let inClip = false;
+    let svgGroupDepth = 0;
 
     for (const op of plot.ops) {
         switch (op.op) {
@@ -917,10 +915,14 @@ function plotToSvg(plot, exportW, exportH) {
                     if (op.ext.filter != null) gAttrs += ' filter="' + svgEsc(op.ext.filter) + '"';
                 }
                 s += svgTag('g', gAttrs) + '\\n';
+                svgGroupDepth++;
                 break;
             }
             case 'endGroup':
-                s += svgClose('g') + '\\n';
+                if (svgGroupDepth > 0) {
+                    s += svgClose('g') + '\\n';
+                    svgGroupDepth--;
+                }
                 break;
         }
     }

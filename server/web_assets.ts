@@ -542,12 +542,12 @@ function applyGc(ctx, gc) {
     }
 }
 
-// Group stack for beginGroup/endGroup compositing.
-// Each entry: { parentCtx, ctx, canvas, ext }
-var _groupStack = [];
-// Track the current clip rectangle so offscreen group canvases can
-// inherit the active clip region.
-var _currentClip = null;
+// Create a fresh render context for group state.  Each render pass
+// (replay, renderToOffscreen) gets its own context so concurrent
+// async renders cannot corrupt each other's group stack.
+function makeRenderCtx() {
+    return { groupStack: [], currentClip: null };
+}
 
 // Convert a postEffect descriptor to a CSS filter string.
 function effectToFilter(effect) {
@@ -657,12 +657,11 @@ async function doReplay(canvas, container, plot, gen) {
         }
 
         var ops = plot.ops;
-        _groupStack = [];
-        _currentClip = null;
+        var rc = makeRenderCtx();
         for (var i = 0; i < ops.length; i++) {
             if (_renderGen !== gen) return;
-            var currentCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : ctx;
-            await renderOp(currentCtx, ops[i], plotH);
+            var currentCtx = rc.groupStack.length > 0 ? rc.groupStack[rc.groupStack.length - 1].ctx : ctx;
+            await renderOp(currentCtx, ops[i], plotH, rc);
             if (_renderGen !== gen) return;
         }
 
@@ -673,12 +672,11 @@ async function doReplay(canvas, container, plot, gen) {
             ctx.save();
         }
     } finally {
-        _groupStack = [];
         ctx.restore();
     }
 }
 
-async function renderOp(ctx, op, plotH) {
+async function renderOp(ctx, op, plotH, rc) {
     switch (op.op) {
         case 'line': {
             applyGc(ctx, op.gc);
@@ -755,7 +753,7 @@ async function renderOp(ctx, op, plotH) {
             break;
         }
         case 'clip': {
-            _currentClip = { x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1 };
+            rc.currentClip = { x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1 };
             ctx.restore();
             ctx.save();
             ctx.beginPath();
@@ -770,14 +768,14 @@ async function renderOp(ctx, op, plotH) {
             var groupCtx = groupCanvas.getContext('2d');
             groupCtx.setTransform(ctx.getTransform());
             groupCtx.save();
-            if (_currentClip) {
+            if (rc.currentClip) {
                 groupCtx.beginPath();
-                groupCtx.rect(_currentClip.x0, _currentClip.y0,
-                              _currentClip.x1 - _currentClip.x0,
-                              _currentClip.y1 - _currentClip.y0);
+                groupCtx.rect(rc.currentClip.x0, rc.currentClip.y0,
+                              rc.currentClip.x1 - rc.currentClip.x0,
+                              rc.currentClip.y1 - rc.currentClip.y0);
                 groupCtx.clip();
             }
-            _groupStack.push({
+            rc.groupStack.push({
                 parentCtx: ctx,
                 ctx: groupCtx,
                 canvas: groupCanvas,
@@ -786,8 +784,8 @@ async function renderOp(ctx, op, plotH) {
             break;
         }
         case 'endGroup': {
-            if (_groupStack.length === 0) break;
-            var group = _groupStack.pop();
+            if (rc.groupStack.length === 0) break;
+            var group = rc.groupStack.pop();
             var parentCtx = group.parentCtx;
             parentCtx.save();
             if (group.ext) {
@@ -865,11 +863,10 @@ function renderToOffscreen(plot, width, height) {
         offCtx.fillRect(0, 0, plotW, plotH);
     }
     return (async function() {
-        _groupStack = [];
-        _currentClip = null;
+        var rc = makeRenderCtx();
         for (var i = 0; i < plot.ops.length; i++) {
-            var currentCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : offCtx;
-            await renderOp(currentCtx, plot.ops[i], plotH);
+            var currentCtx = rc.groupStack.length > 0 ? rc.groupStack[rc.groupStack.length - 1].ctx : offCtx;
+            await renderOp(currentCtx, plot.ops[i], plotH, rc);
         }
         if (plot._frameExt && plot._frameExt.postEffects) {
             applyPostEffects(offCtx, plot._frameExt.postEffects);
@@ -935,6 +932,7 @@ function plotToSvg(plot, exportW, exportH) {
 
     var clipId = 0;
     var inClip = false;
+    var svgGroupDepth = 0;
 
     for (var oi = 0; oi < plot.ops.length; oi++) {
         var op = plot.ops[oi];
@@ -1019,10 +1017,14 @@ function plotToSvg(plot, exportW, exportH) {
                     if (op.ext.filter != null) gAttrs += ' filter="' + svgEsc(op.ext.filter) + '"';
                 }
                 s += svgTag('g', gAttrs) + '\\n';
+                svgGroupDepth++;
                 break;
             }
             case 'endGroup':
-                s += svgClose('g') + '\\n';
+                if (svgGroupDepth > 0) {
+                    s += svgClose('g') + '\\n';
+                    svgGroupDepth--;
+                }
                 break;
         }
     }
