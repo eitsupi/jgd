@@ -96,15 +96,19 @@ static void cb_newPage(const pGEcontext gc, pDevDesc dd) {
         jgd_flush_frame(st, st->last_flushed_ops > 0 ? 1 : 0);
     }
 
-    /* Re-capture the snapshot now.  The base display list was already
-     * cleared by GEinitDisplayList (called from grid.newpage's
-     * C_newpagerecording before C_newpage triggers this callback), but
-     * grid's own display list is still intact — it won't be cleared
-     * until C_initDisplayList runs later in grid.newpage.  Capturing
-     * here ensures the snapshot contains the complete grid DL (with
-     * dlIndex > 1), which GE_RestoreSnapshotState requires to restore
-     * grid state during replay. */
-    if (st->page_count > 0 && !st->replaying)
+    /* For grid/ggplot2 plots, re-capture the snapshot now to get the
+     * complete grid DL (with dlIndex > 1).  The base DL was already
+     * cleared by GEinitDisplayList, but grid's own DL is still intact
+     * (it won't be cleared until C_initDisplayList runs later in
+     * grid.newpage).
+     *
+     * Only re-capture when the existing snapshot contains grid state —
+     * for base-only plots the flush-time snapshot already has the
+     * complete base DL, and re-capturing here would lose it (the base
+     * DL is already empty at this point). */
+    if (st->page_count > 0 && !st->replaying &&
+        st->last_snapshot != R_NilValue &&
+        find_grid_state(st->last_snapshot) != R_NilValue)
         jgd_capture_snapshot(st);
     if (st->page_count > 0 && !st->replaying && st->last_snapshot != R_NilValue) {
         if (st->snapshot_count >= JGD_MAX_SNAPSHOTS) {
