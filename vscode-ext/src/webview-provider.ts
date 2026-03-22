@@ -912,7 +912,7 @@ function plotToSvg(plot, exportW, exportH) {
                 let gAttrs = '';
                 if (op.ext) {
                     if (op.ext.opacity != null) gAttrs += ' opacity="' + op.ext.opacity + '"';
-                    if (op.ext.filter != null) gAttrs += ' style="filter:' + svgEsc(op.ext.filter) + '"';
+                    if (op.ext.filter != null) gAttrs += ' style="filter:' + svgEsc(op.ext.filter) + ';"';
                 }
                 s += svgTag('g', gAttrs) + '\\n';
                 svgGroupDepth++;
