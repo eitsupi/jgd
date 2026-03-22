@@ -324,7 +324,7 @@ export const assets: Record<string, { body: string; type: string }> = {
         } else if (msg.incremental) {
             history.appendOps(sessionId, plot);
         } else {
-            if (typeof msg.plotNumber === 'number') {
+            if (typeof msg.plotNumber === 'number' && isFinite(msg.plotNumber)) {
                 plot._rIndex = msg.plotNumber;
             }
             history.addPlot(sessionId, plot);
