@@ -403,6 +403,208 @@ test_that("group ops survive resize replay via recordGraphics", {
   )
 })
 
+# --- plotIndex resize replay test (jgd-592: past plot turns blank) ---
+
+# TCP mock server that sends a plotIndex=0 resize after receiving two
+# newPage frames, then collects all messages including the replay.
+start_mock_server_group_plotindex_resize <- function() {
+  skip_if_not_installed("callr")
+  skip_if_not_installed("jsonlite")
+
+  port_file <- tempfile(
+    pattern = "jgd-grp-pi-resize-port-",
+    fileext = ".txt"
+  )
+
+  bg <- callr::r_bg(
+    function(port_file) {
+      safe_write <- function(conn, text) {
+        tryCatch(
+          { writeLines(text, conn); flush(conn) },
+          error = function(e) invisible(NULL)
+        )
+      }
+
+      server <- NULL
+      port <- NULL
+      for (i in seq_len(20)) {
+        candidate <- sample(10000L:60000L, 1L)
+        result <- tryCatch(serverSocket(candidate), error = function(e) NULL)
+        if (!is.null(result)) { server <- result; port <- candidate; break }
+      }
+      if (is.null(port)) stop("Could not find free port")
+      on.exit(close(server), add = TRUE)
+      writeLines(as.character(port), port_file)
+
+      conn <- socketAccept(server, blocking = TRUE, open = "r+")
+      on.exit(close(conn), add = TRUE)
+
+      messages <- list()
+      new_page_count <- 0L
+      resize_sent <- FALSE
+
+      repeat {
+        ready <- socketSelect(list(conn), timeout = 5)
+        if (!ready) next
+
+        line <- tryCatch(readLines(conn, n = 1), error = function(e) character(0))
+        if (length(line) == 0 || !nzchar(line)) next
+
+        msg <- tryCatch(
+          jsonlite::fromJSON(line, simplifyVector = FALSE),
+          error = function(e) NULL
+        )
+        if (is.null(msg)) next
+        messages <- c(messages, list(msg))
+
+        if (identical(msg$type, "metrics_request")) {
+          str_val <- if (is.null(msg$str)) "" else msg$str
+          resp <- if (identical(msg$kind, "strWidth")) {
+            list(type = "metrics_response", id = msg$id,
+                 width = nchar(str_val) * 8.0)
+          } else {
+            list(type = "metrics_response", id = msg$id,
+                 ascent = 10.0, descent = 3.0, width = 8.0)
+          }
+          safe_write(conn, jsonlite::toJSON(resp, auto_unbox = TRUE))
+        }
+
+        if (identical(msg$type, "frame") && isTRUE(msg$newPage)) {
+          new_page_count <- new_page_count + 1L
+        }
+
+        # After 2 newPage frames, send plotIndex=0 resize
+        if (new_page_count >= 2L && !resize_sent) {
+          resize_sent <- TRUE
+          safe_write(conn, jsonlite::toJSON(list(
+            type = "resize", width = 500L, height = 400L, plotIndex = 0L
+          ), auto_unbox = TRUE))
+        }
+
+        if (identical(msg$type, "close")) break
+      }
+
+      messages
+    },
+    args = list(port_file = port_file),
+    supervise = TRUE
+  )
+
+  port <- NULL
+  for (i in seq_len(50)) {
+    if (file.exists(port_file)) {
+      port_str <- readLines(port_file, n = 1, warn = FALSE)
+      if (length(port_str) > 0 && nzchar(port_str)) {
+        port <- as.integer(port_str)
+        break
+      }
+    }
+    Sys.sleep(0.1)
+  }
+  if (is.null(port)) { bg$kill(); skip("Mock server did not start in time") }
+
+  list(
+    bg = bg,
+    socket_url = sprintf("tcp://127.0.0.1:%d", port),
+    collect = function(timeout = 15000) {
+      bg$wait(timeout)
+      status <- bg$get_exit_status()
+      if (!is.null(status) && status != 0) {
+        stop("Mock server exited with error: ", bg$read_error())
+      }
+      if (is.null(status)) { bg$kill(); skip("Mock server did not exit in time") }
+      bg$get_result()
+    },
+    cleanup = function() {
+      if (bg$is_alive()) bg$kill()
+      unlink(port_file)
+    }
+  )
+}
+
+test_that("group ops survive plotIndex resize replay (jgd-592)", {
+  skip_on_cran()
+
+  server <- start_mock_server_group_plotindex_resize()
+  withr::defer(server$cleanup())
+
+  jgd(width = 4, height = 3, dpi = 72, socket = server$socket_url)
+
+  # Plot 1: group with blur filter
+  plot.new()
+  jgd_begin_group('{"filter":"blur(5px)"}')
+  rect(0, 0, 1, 1)
+  jgd_end_group()
+
+  # Plot 2: plain plot (no groups)
+  plot.new()
+  rect(0, 0, 0.5, 0.5, col = "red")
+
+  # Wait for mock server to send plotIndex=0 resize
+  Sys.sleep(0.5)
+  .Call(jgd:::C_jgd_poll_resize)
+
+  dev.off()
+  msgs <- server$collect()
+
+  # Find resize replay frames with plotIndex=0
+  frames <- Filter(function(m) identical(m$type, "frame"), msgs)
+  resize_frames <- Filter(
+    function(f) isTRUE(f$resizeReplay) && identical(f$plotIndex, 0L),
+    frames
+  )
+  expect_true(
+    length(resize_frames) >= 1,
+    info = "Should have at least 1 plotIndex=0 resize replay frame"
+  )
+
+  # Collect all ops from the resize replay (may span multiple frames
+  # if endGroup triggers an incremental flush)
+  replay_ops <- resize_frames[[1]]$plot$ops
+  # Also check for subsequent incremental frames that are part of
+  # the same plotIndex replay
+  replay_idx <- which(vapply(frames, function(f) {
+    isTRUE(f$resizeReplay) && identical(f$plotIndex, 0L)
+  }, logical(1)))[1]
+  if (replay_idx < length(frames)) {
+    for (j in (replay_idx + 1):length(frames)) {
+      if (isTRUE(frames[[j]]$incremental)) {
+        replay_ops <- c(replay_ops, frames[[j]]$plot$ops)
+      } else {
+        break
+      }
+    }
+  }
+
+  op_types <- vapply(
+    replay_ops,
+    function(o) if (is.null(o$op)) "" else o$op,
+    character(1)
+  )
+
+  expect_true(
+    "beginGroup" %in% op_types,
+    info = paste0(
+      "plotIndex=0 resize replay should contain beginGroup. ",
+      "Ops found: [", paste(op_types, collapse = ", "), "]"
+    )
+  )
+  expect_true(
+    "endGroup" %in% op_types,
+    info = paste0(
+      "plotIndex=0 resize replay should contain endGroup. ",
+      "Ops found: [", paste(op_types, collapse = ", "), "]"
+    )
+  )
+
+  # Group ext should be preserved
+  begin_ops <- Filter(function(o) identical(o$op, "beginGroup"), replay_ops)
+  expect_true(
+    length(begin_ops) >= 1 && identical(begin_ops[[1]]$ext$filter, "blur(5px)"),
+    info = "Group ext should be preserved in plotIndex resize replay"
+  )
+})
+
 # --- Input validation tests ---
 
 test_that("jgd_begin_group rejects invalid JSON", {
