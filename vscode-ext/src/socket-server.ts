@@ -213,6 +213,7 @@ export class SocketServer {
                 case 'frame':
                     if (msg.plot) {
                         msg.plot.sessionId = session.id;
+                        msg.plot.frameExt = msg.ext || null;
 
                         const isResizeReplay = !!msg.resizeReplay;
                         const plotIndex = (typeof msg.plotIndex === 'number' && Number.isFinite(msg.plotIndex)) ? msg.plotIndex : undefined;

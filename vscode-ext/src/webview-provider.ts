@@ -360,6 +360,16 @@ window.addEventListener('message', (event) => {
 });
 
 function applyGc(ctx, gc) {
+    // Always reset extended Canvas2D state to defaults, even when gc is
+    // absent.  This prevents gc.ext fields from leaking into subsequent
+    // ops that lack a gc object (e.g. raster ops without gc).
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.filter = 'none';
     if (!gc) return;
     if (gc.col != null) ctx.strokeStyle = gc.col;
     if (gc.fill != null) ctx.fillStyle = gc.fill;
@@ -381,6 +391,18 @@ function applyGc(ctx, gc) {
         if (face === 3 || face === 4) style += 'italic ';
         ctx.font = style + size + 'px ' + family;
     }
+    // Apply extension fields from gc.ext if present.
+    if (gc.ext) {
+        if (gc.ext.blendMode != null) ctx.globalCompositeOperation = gc.ext.blendMode;
+        if (gc.ext.opacity != null) ctx.globalAlpha = gc.ext.opacity;
+        if (gc.ext.shadow) {
+            if (gc.ext.shadow.blur != null) ctx.shadowBlur = gc.ext.shadow.blur;
+            if (gc.ext.shadow.color != null) ctx.shadowColor = gc.ext.shadow.color;
+            if (gc.ext.shadow.offsetX != null) ctx.shadowOffsetX = gc.ext.shadow.offsetX;
+            if (gc.ext.shadow.offsetY != null) ctx.shadowOffsetY = gc.ext.shadow.offsetY;
+        }
+        if (gc.ext.filter != null) ctx.filter = gc.ext.filter;
+    }
 }
 
 function mapFontFamily(family) {
@@ -388,6 +410,63 @@ function mapFontFamily(family) {
     if (family === 'serif' || family === 'Times') return 'serif';
     if (family === 'mono' || family === 'Courier') return 'monospace';
     return family + ', sans-serif';
+}
+
+// Group stack for beginGroup/endGroup compositing.
+let _groupStack = [];
+let _currentClip = null;
+
+function effectToFilter(effect) {
+    switch (effect.type) {
+        case 'blur': return 'blur(' + (effect.radius || 0) + 'px)';
+        case 'brightness': return 'brightness(' + (effect.value || 1) + ')';
+        case 'contrast': return 'contrast(' + (effect.value || 1) + ')';
+        case 'grayscale': return 'grayscale(' + (effect.value || 1) + ')';
+        case 'saturate': return 'saturate(' + (effect.value || 1) + ')';
+        case 'sepia': return 'sepia(' + (effect.value || 1) + ')';
+        case 'hue-rotate': return 'hue-rotate(' + (effect.angle || 0) + 'deg)';
+        case 'invert': return 'invert(' + (effect.value || 1) + ')';
+        default: return effect.filter || '';
+    }
+}
+
+function applyGlowEffect(ctx, effect) {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = w;
+    tmpCanvas.height = h;
+    tmpCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.filter = 'blur(' + (effect.radius || 3) + 'px) brightness(' + (effect.brightness || 1.5) + ')';
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(tmpCanvas, 0, 0);
+    ctx.restore();
+}
+
+function applyPostEffects(ctx, effects) {
+    for (let i = 0; i < effects.length; i++) {
+        const effect = effects[i];
+        if (effect.type === 'glow') {
+            applyGlowEffect(ctx, effect);
+            continue;
+        }
+        const filterStr = effectToFilter(effect);
+        if (!filterStr) continue;
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+        const tmpCanvas = document.createElement('canvas');
+        tmpCanvas.width = w;
+        tmpCanvas.height = h;
+        tmpCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        ctx.filter = filterStr;
+        ctx.drawImage(tmpCanvas, 0, 0);
+        ctx.restore();
+    }
 }
 
 let replayGeneration = 0;
@@ -440,12 +519,23 @@ async function doReplay(plot, gen) {
         }
 
         const ops = plot.ops;
+        _groupStack = [];
+        _currentClip = null;
         for (let i = 0; i < ops.length; i++) {
             if (replayGeneration !== gen) return;
-            await renderOp(ctx, ops[i], plotH);
+            const currentCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : ctx;
+            await renderOp(currentCtx, ops[i], plotH);
             if (replayGeneration !== gen) return;
         }
+
+        // Apply frame-level postEffects if present.
+        if (plot.frameExt && plot.frameExt.postEffects) {
+            ctx.restore();
+            applyPostEffects(ctx, plot.frameExt.postEffects);
+            ctx.save();
+        }
     } finally {
+        _groupStack = [];
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
@@ -528,11 +618,55 @@ async function renderOp(ctx, op, plotH) {
             break;
         }
         case 'clip': {
+            _currentClip = { x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1 };
             ctx.restore();
             ctx.save();
             ctx.beginPath();
             ctx.rect(op.x0, op.y0, op.x1 - op.x0, op.y1 - op.y0);
             ctx.clip();
+            break;
+        }
+        case 'beginGroup': {
+            const groupCanvas = document.createElement('canvas');
+            groupCanvas.width = ctx.canvas.width;
+            groupCanvas.height = ctx.canvas.height;
+            const groupCtx = groupCanvas.getContext('2d');
+            groupCtx.setTransform(ctx.getTransform());
+            groupCtx.save();
+            if (_currentClip) {
+                groupCtx.beginPath();
+                groupCtx.rect(_currentClip.x0, _currentClip.y0,
+                              _currentClip.x1 - _currentClip.x0,
+                              _currentClip.y1 - _currentClip.y0);
+                groupCtx.clip();
+            }
+            _groupStack.push({
+                parentCtx: ctx,
+                ctx: groupCtx,
+                canvas: groupCanvas,
+                ext: op.ext || null
+            });
+            break;
+        }
+        case 'endGroup': {
+            if (_groupStack.length === 0) break;
+            const group = _groupStack.pop();
+            const parentCtx = group.parentCtx;
+            parentCtx.save();
+            if (group.ext) {
+                if (group.ext.filter != null) parentCtx.filter = group.ext.filter;
+                if (group.ext.opacity != null) parentCtx.globalAlpha = group.ext.opacity;
+                if (group.ext.blendMode != null) parentCtx.globalCompositeOperation = group.ext.blendMode;
+                if (group.ext.shadow) {
+                    if (group.ext.shadow.blur != null) parentCtx.shadowBlur = group.ext.shadow.blur;
+                    if (group.ext.shadow.color != null) parentCtx.shadowColor = group.ext.shadow.color;
+                    if (group.ext.shadow.offsetX != null) parentCtx.shadowOffsetX = group.ext.shadow.offsetX;
+                    if (group.ext.shadow.offsetY != null) parentCtx.shadowOffsetY = group.ext.shadow.offsetY;
+                }
+            }
+            parentCtx.setTransform(1, 0, 0, 1, 0, 0);
+            parentCtx.drawImage(group.canvas, 0, 0);
+            parentCtx.restore();
             break;
         }
         case 'path': {
@@ -628,7 +762,15 @@ function handleExport(format, exportW, exportH) {
             offCtx.fillRect(0, 0, plotW, plotH);
         }
         (async () => {
-            for (const op of currentPlot.ops) await renderOp(offCtx, op, plotH);
+            _groupStack = [];
+            _currentClip = null;
+            for (const op of currentPlot.ops) {
+                const curCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : offCtx;
+                await renderOp(curCtx, op, plotH);
+            }
+            if (currentPlot.frameExt && currentPlot.frameExt.postEffects) {
+                applyPostEffects(offCtx, currentPlot.frameExt.postEffects);
+            }
             offscreen.toBlob((blob) => {
                 if (!blob) return;
                 const reader = new FileReader();
@@ -768,6 +910,18 @@ function plotToSvg(plot, exportW, exportH) {
                 s += svgTag('image', ' x="' + dx + '" y="' + dy + '" width="' + aw + '" height="' + ah + '" href="' + op.data + '"' + transform, true) + '\\n';
                 break;
             }
+            case 'beginGroup': {
+                let gAttrs = '';
+                if (op.ext) {
+                    if (op.ext.opacity != null) gAttrs += ' opacity="' + op.ext.opacity + '"';
+                    if (op.ext.filter != null) gAttrs += ' filter="' + svgEsc(op.ext.filter) + '"';
+                }
+                s += svgTag('g', gAttrs) + '\\n';
+                break;
+            }
+            case 'endGroup':
+                s += svgClose('g') + '\\n';
+                break;
         }
     }
 

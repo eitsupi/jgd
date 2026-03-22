@@ -315,6 +315,7 @@ export const assets: Record<string, { body: string; type: string }> = {
 
     function handleFrame(msg) {
         var plot = msg.plot;
+        plot._frameExt = msg.ext || null;
         var sessionId = plot.sessionId || 'default';
         if (msg.resize) {
             if (msg.plotIndex !== undefined) {
@@ -536,6 +537,69 @@ function applyGc(ctx, gc) {
     }
 }
 
+// Group stack for beginGroup/endGroup compositing.
+// Each entry: { parentCtx, ctx, canvas, ext }
+var _groupStack = [];
+// Track the current clip rectangle so offscreen group canvases can
+// inherit the active clip region.
+var _currentClip = null;
+
+// Convert a postEffect descriptor to a CSS filter string.
+function effectToFilter(effect) {
+    switch (effect.type) {
+        case 'blur': return 'blur(' + (effect.radius || 0) + 'px)';
+        case 'brightness': return 'brightness(' + (effect.value || 1) + ')';
+        case 'contrast': return 'contrast(' + (effect.value || 1) + ')';
+        case 'grayscale': return 'grayscale(' + (effect.value || 1) + ')';
+        case 'saturate': return 'saturate(' + (effect.value || 1) + ')';
+        case 'sepia': return 'sepia(' + (effect.value || 1) + ')';
+        case 'hue-rotate': return 'hue-rotate(' + (effect.angle || 0) + 'deg)';
+        case 'invert': return 'invert(' + (effect.value || 1) + ')';
+        default: return effect.filter || '';
+    }
+}
+
+// Apply a glow post-effect: draw a blurred bright copy with additive blending.
+function applyGlowEffect(ctx, effect) {
+    var w = ctx.canvas.width;
+    var h = ctx.canvas.height;
+    var tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = w;
+    tmpCanvas.height = h;
+    tmpCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.filter = 'blur(' + (effect.radius || 3) + 'px) brightness(' + (effect.brightness || 1.5) + ')';
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(tmpCanvas, 0, 0);
+    ctx.restore();
+}
+
+// Apply frame-level postEffects after all ops have been rendered.
+function applyPostEffects(ctx, effects) {
+    for (var i = 0; i < effects.length; i++) {
+        var effect = effects[i];
+        if (effect.type === 'glow') {
+            applyGlowEffect(ctx, effect);
+            continue;
+        }
+        var filterStr = effectToFilter(effect);
+        if (!filterStr) continue;
+        var w = ctx.canvas.width;
+        var h = ctx.canvas.height;
+        var tmpCanvas = document.createElement('canvas');
+        tmpCanvas.width = w;
+        tmpCanvas.height = h;
+        tmpCanvas.getContext('2d').drawImage(ctx.canvas, 0, 0);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        ctx.filter = filterStr;
+        ctx.drawImage(tmpCanvas, 0, 0);
+        ctx.restore();
+    }
+}
+
 // Generation counter to detect superseded renders — incremented each
 // time replay() starts.  If a newer render begins while an async op
 // (raster image decode) is pending, the older render aborts.
@@ -575,11 +639,21 @@ async function replay(canvas, container, plot) {
     }
 
     var ops = plot.ops;
+    _groupStack = [];
+    _currentClip = null;
     for (var i = 0; i < ops.length; i++) {
-        await renderOp(ctx, ops[i], plotH);
+        var currentCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : ctx;
+        await renderOp(currentCtx, ops[i], plotH);
         // Abort if a newer render has started (prevents overlap from
         // async raster image decoding interleaving with a new render).
-        if (_renderGen !== gen) { ctx.restore(); return; }
+        if (_renderGen !== gen) { _groupStack = []; ctx.restore(); return; }
+    }
+
+    // Apply frame-level postEffects if present.
+    if (plot._frameExt && plot._frameExt.postEffects) {
+        ctx.restore();
+        applyPostEffects(ctx, plot._frameExt.postEffects);
+        ctx.save();
     }
 
     ctx.restore();
@@ -662,11 +736,56 @@ async function renderOp(ctx, op, plotH) {
             break;
         }
         case 'clip': {
+            _currentClip = { x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1 };
             ctx.restore();
             ctx.save();
             ctx.beginPath();
             ctx.rect(op.x0, op.y0, op.x1 - op.x0, op.y1 - op.y0);
             ctx.clip();
+            break;
+        }
+        case 'beginGroup': {
+            var groupCanvas = document.createElement('canvas');
+            groupCanvas.width = ctx.canvas.width;
+            groupCanvas.height = ctx.canvas.height;
+            var groupCtx = groupCanvas.getContext('2d');
+            groupCtx.setTransform(ctx.getTransform());
+            groupCtx.save();
+            if (_currentClip) {
+                groupCtx.beginPath();
+                groupCtx.rect(_currentClip.x0, _currentClip.y0,
+                              _currentClip.x1 - _currentClip.x0,
+                              _currentClip.y1 - _currentClip.y0);
+                groupCtx.clip();
+            }
+            _groupStack.push({
+                parentCtx: ctx,
+                ctx: groupCtx,
+                canvas: groupCanvas,
+                ext: op.ext || null
+            });
+            break;
+        }
+        case 'endGroup': {
+            if (_groupStack.length === 0) break;
+            var group = _groupStack.pop();
+            var parentCtx = group.parentCtx;
+            parentCtx.save();
+            if (group.ext) {
+                if (group.ext.filter != null) parentCtx.filter = group.ext.filter;
+                if (group.ext.opacity != null) parentCtx.globalAlpha = group.ext.opacity;
+                if (group.ext.blendMode != null) parentCtx.globalCompositeOperation = group.ext.blendMode;
+                if (group.ext.shadow) {
+                    if (group.ext.shadow.blur != null) parentCtx.shadowBlur = group.ext.shadow.blur;
+                    if (group.ext.shadow.color != null) parentCtx.shadowColor = group.ext.shadow.color;
+                    if (group.ext.shadow.offsetX != null) parentCtx.shadowOffsetX = group.ext.shadow.offsetX;
+                    if (group.ext.shadow.offsetY != null) parentCtx.shadowOffsetY = group.ext.shadow.offsetY;
+                }
+            }
+            var savedTransform = parentCtx.getTransform();
+            parentCtx.setTransform(1, 0, 0, 1, 0, 0);
+            parentCtx.drawImage(group.canvas, 0, 0);
+            parentCtx.restore();
             break;
         }
         case 'path': {
@@ -728,8 +847,14 @@ function renderToOffscreen(plot, width, height) {
         offCtx.fillRect(0, 0, plotW, plotH);
     }
     return (async function() {
+        _groupStack = [];
+        _currentClip = null;
         for (var i = 0; i < plot.ops.length; i++) {
-            await renderOp(offCtx, plot.ops[i], plotH);
+            var currentCtx = _groupStack.length > 0 ? _groupStack[_groupStack.length - 1].ctx : offCtx;
+            await renderOp(currentCtx, plot.ops[i], plotH);
+        }
+        if (plot._frameExt && plot._frameExt.postEffects) {
+            applyPostEffects(offCtx, plot._frameExt.postEffects);
         }
         return new Promise(function(resolve) {
             offscreen.toBlob(function(blob) { resolve(blob); }, 'image/png');
@@ -869,6 +994,18 @@ function plotToSvg(plot, exportW, exportH) {
                 s += svgTag('image', ' x="' + dx + '" y="' + dy + '" width="' + aw + '" height="' + ah + '" href="' + safeHref + '"' + transform, true) + '\\n';
                 break;
             }
+            case 'beginGroup': {
+                var gAttrs = '';
+                if (op.ext) {
+                    if (op.ext.opacity != null) gAttrs += ' opacity="' + op.ext.opacity + '"';
+                    if (op.ext.filter != null) gAttrs += ' filter="' + svgEsc(op.ext.filter) + '"';
+                }
+                s += svgTag('g', gAttrs) + '\\n';
+                break;
+            }
+            case 'endGroup':
+                s += svgClose('g') + '\\n';
+                break;
         }
     }
 
