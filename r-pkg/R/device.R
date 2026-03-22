@@ -204,6 +204,18 @@ jgd_end_group = function() {
 #' @export
 with_jgd_group = function(ext, expr) {
   jgd_begin_group(ext)
-  on.exit(jgd_end_group(), add = TRUE)
+  on.exit({
+    tryCatch(
+      jgd_end_group(),
+      error = function(e) {
+        # If the device auto-closed the group at a page boundary
+        # (cb_newPage resets group_depth), the cleanup endGroup would
+        # fail with "endGroup without matching beginGroup".  Suppress
+        # that specific error so the original error (if any) propagates.
+        if (!grepl("endGroup without matching", conditionMessage(e)))
+          stop(e)
+      }
+    )
+  }, add = TRUE)
   expr
 }
