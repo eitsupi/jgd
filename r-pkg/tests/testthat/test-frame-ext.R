@@ -232,8 +232,9 @@ test_that("frame ext survives resize replay", {
 
   plot(1:3)
 
-  # Wait for the mock server to send the resize
-  Sys.sleep(0.5)
+  # Wait for the mock server to send the resize.
+  # Windows i386 CI can be slow; use a longer sleep.
+  Sys.sleep(1.5)
 
   # Process the resize
   .Call(jgd:::C_jgd_poll_resize)
