@@ -117,7 +117,11 @@ export class PlotHistory {
         if (expectedRIndex !== undefined && old?.rIndex !== undefined && old.rIndex !== expectedRIndex) {
             return false;
         }
-        if (old?.rIndex !== undefined) plot.rIndex = old.rIndex;
+        if (old?.rIndex !== undefined) {
+            plot.rIndex = old.rIndex;
+        } else if (expectedRIndex !== undefined) {
+            plot.rIndex = expectedRIndex;
+        }
         session.plots[session.plots.length - 1] = plot;
         // Don't change currentIndex — user stays on their historical view
         this.activeSessionId = sessionId;

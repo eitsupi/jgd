@@ -152,7 +152,11 @@ export const assets: Record<string, { body: string; type: string }> = {
         if (expectedRIndex !== undefined && old && old._rIndex !== undefined && old._rIndex !== expectedRIndex) {
             return;
         }
-        if (old && old._rIndex !== undefined) plot._rIndex = old._rIndex;
+        if (old && old._rIndex !== undefined) {
+            plot._rIndex = old._rIndex;
+        } else if (expectedRIndex !== undefined) {
+            plot._rIndex = expectedRIndex;
+        }
         session.plots[session.plots.length - 1] = plot;
         this._activeSessionId = sessionId;
         // Don't change currentIndex — user stays on their historical view
